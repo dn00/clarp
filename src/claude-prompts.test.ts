@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   createWorkspaceTrustPromptDetector,
   isWorkspaceTrustPrompt,
+  shouldAutoConfirmWorkspaceTrust,
   stripTerminalControls,
 } from "./claude-prompts.js";
 
@@ -42,6 +43,12 @@ describe("Claude prompt detection", () => {
 
   it("does not detect unrelated Claude output", () => {
     expect(isWorkspaceTrustPrompt("Hi! What can I help you with?")).toBe(false);
+  });
+
+  it("auto-confirms workspace trust only for explicit permission bypass", () => {
+    expect(shouldAutoConfirmWorkspaceTrust(["--dangerously-skip-permissions"])).toBe(true);
+    expect(shouldAutoConfirmWorkspaceTrust(["--permission-mode", "bypassPermissions"])).toBe(false);
+    expect(shouldAutoConfirmWorkspaceTrust(["hello"])).toBe(false);
   });
 
   it("detects prompts split across PTY chunks only once", () => {

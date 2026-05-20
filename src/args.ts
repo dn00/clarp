@@ -17,18 +17,162 @@ export type Args = {
   cwd: string;
 };
 
-/**
- * Claude Code flags whose values must stay attached when forwarding unknown
- * options to the interactive `claude` process.
- */
-export const VALUE_FLAGS = new Set([
-  "--model", "--permission-mode", "--system-prompt", "--append-system-prompt",
-  "--allowed-tools", "--disallowed-tools", "--session-id", "--resume",
-  "--add-dir", "--mcp-config", "--effort", "--agent", "--agents", "--name",
+const SCALAR_VALUE_FLAGS = new Set([
+  "--model", "--permission-mode", "--system-prompt", "--system-prompt-file",
+  "--append-system-prompt", "--append-system-prompt-file",
+  "--session-id", "--effort", "--agent", "--agents", "--name", "-n",
   "--setting-sources", "--settings", "--fallback-model", "--permission-prompt-tool",
-  "--max-thinking-tokens", "--output-style", "--input-format", "--output-format",
-  "--include-partial-messages", "--max-turns", "--max-budget-usd",
+  "--max-thinking-tokens", "--output-style", "--debug-file", "--json-schema",
+  "--remote-control-session-name-prefix", "--plugin-dir", "--plugin-url",
+  "--thinking", "--task-budget", "--prefill", "--deep-link-repo",
+  "--deep-link-last-fetch", "--resume-session-at", "--rewind-files",
+  "--workload", "--advisor", "--messaging-socket-path", "--agent-id",
+  "--agent-name", "--team-name", "--agent-color", "--parent-session-id",
+  "--teammate-mode", "--agent-type", "--sdk-url",
 ]);
+
+const OPTIONAL_VALUE_FLAGS = new Set([
+  "--resume", "-r", "--debug", "-d", "--from-pr", "--remote-control", "--rc",
+  "--worktree", "-w", "--teleport", "--remote", "--tasks",
+]);
+
+const VARIADIC_VALUE_FLAGS = new Set([
+  "--add-dir", "--mcp-config", "--betas", "--file", "--tools",
+  "--allowed-tools", "--allowedTools", "--disallowed-tools", "--disallowedTools",
+  "--channels", "--dangerously-load-development-channels",
+]);
+
+const BOOLEAN_FLAGS = new Set([
+  "--bare", "--continue", "-c", "--allow-dangerously-skip-permissions",
+  "--dangerously-skip-permissions", "--strict-mcp-config", "--fork-session",
+  "--no-session-persistence", "--disable-slash-commands", "--mcp-debug",
+  "--ide", "--chrome", "--no-chrome", "--brief", "--tmux", "-d2e",
+  "--debug-to-stderr", "--init", "--init-only", "--maintenance",
+  "--enable-auth-status", "--deep-link-origin", "--plan-mode-required",
+  "--delegate-permissions", "--dangerously-skip-permissions-with-classifiers",
+  "--afk", "--agent-teams", "--enable-auto-mode", "--proactive",
+  "--assistant", "--hard-fail",
+]);
+
+export const VALUE_FLAGS = new Set([
+  ...SCALAR_VALUE_FLAGS,
+  ...OPTIONAL_VALUE_FLAGS,
+  ...VARIADIC_VALUE_FLAGS,
+]);
+
+const KNOWN_CLAUDE_FLAGS = new Set([
+  ...VALUE_FLAGS,
+  ...BOOLEAN_FLAGS,
+]);
+
+const VALUE_LABELS = new Map([
+  ["--model", "model"],
+  ["--permission-mode", "mode"],
+  ["--system-prompt", "prompt"],
+  ["--system-prompt-file", "file"],
+  ["--append-system-prompt", "prompt"],
+  ["--append-system-prompt-file", "file"],
+  ["--session-id", "uuid"],
+  ["--effort", "level"],
+  ["--agent", "agent"],
+  ["--agents", "json"],
+  ["--name", "name"],
+  ["-n", "name"],
+  ["--setting-sources", "sources"],
+  ["--settings", "file-or-json"],
+  ["--fallback-model", "model"],
+  ["--permission-prompt-tool", "tool"],
+  ["--max-thinking-tokens", "tokens"],
+  ["--output-style", "style"],
+  ["--debug-file", "path"],
+  ["--json-schema", "schema"],
+  ["--remote-control-session-name-prefix", "prefix"],
+  ["--plugin-dir", "path"],
+  ["--plugin-url", "url"],
+  ["--thinking", "mode"],
+  ["--task-budget", "tokens"],
+  ["--prefill", "text"],
+  ["--deep-link-repo", "slug"],
+  ["--deep-link-last-fetch", "ms"],
+  ["--resume-session-at", "message id"],
+  ["--rewind-files", "user-message-id"],
+  ["--workload", "tag"],
+  ["--advisor", "model"],
+  ["--messaging-socket-path", "path"],
+  ["--agent-id", "id"],
+  ["--agent-name", "name"],
+  ["--team-name", "name"],
+  ["--agent-color", "color"],
+  ["--parent-session-id", "id"],
+  ["--teammate-mode", "mode"],
+  ["--agent-type", "type"],
+  ["--sdk-url", "url"],
+  ["--add-dir", "directories..."],
+  ["--mcp-config", "configs..."],
+  ["--betas", "betas..."],
+  ["--file", "specs..."],
+  ["--tools", "tools..."],
+  ["--allowedTools", "tools..."],
+  ["--allowed-tools", "tools..."],
+  ["--disallowedTools", "tools..."],
+  ["--disallowed-tools", "tools..."],
+]);
+
+function throwMissingValue(flagName: string): never {
+  if (flagName === "--allowedTools" || flagName === "--allowed-tools") {
+    throw new Error("error: option '--allowedTools, --allowed-tools <tools...>' argument missing");
+  }
+  if (flagName === "--disallowedTools" || flagName === "--disallowed-tools") {
+    throw new Error("error: option '--disallowedTools, --disallowed-tools <tools...>' argument missing");
+  }
+  const label = VALUE_LABELS.get(flagName) ?? "value";
+  throw new Error(`error: option '${flagName} <${label}>' argument missing`);
+}
+
+function throwUnknownOption(arg: string): never {
+  throw new Error(`error: unknown option '${arg}'`);
+}
+
+function consumeValueArgs(argv: string[], i: number, flagName: string, result: Args): number {
+  if (argHasValue(argv[i]!)) return i;
+  const start = i;
+  if (VARIADIC_VALUE_FLAGS.has(flagName)) {
+    while (i + 1 < argv.length && !argv[i + 1]!.startsWith("-")) {
+      result.claudeArgs.push(argv[++i]!);
+    }
+    if (i === start) throwMissingValue(flagName);
+    return i;
+  }
+  if (SCALAR_VALUE_FLAGS.has(flagName)) {
+    if (i + 1 >= argv.length || argv[i + 1]!.startsWith("-")) throwMissingValue(flagName);
+    result.claudeArgs.push(argv[++i]!);
+    return i;
+  }
+  if (OPTIONAL_VALUE_FLAGS.has(flagName) && i + 1 < argv.length && !argv[i + 1]!.startsWith("-")) {
+    result.claudeArgs.push(argv[++i]!);
+  }
+  return i;
+}
+
+function argHasValue(arg: string): boolean {
+  return arg.includes("=");
+}
+
+function parsePositiveIntegerFlag(flag: string, value: string): number {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    throw new Error(`Invalid ${flag}: ${value || "(missing)"}`);
+  }
+  return parsed;
+}
+
+function parsePositiveNumberFlag(flag: string, value: string): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    throw new Error(`Invalid ${flag}: ${value || "(missing)"}`);
+  }
+  return parsed;
+}
 
 function getPackageVersion(): string {
   try {
@@ -52,7 +196,7 @@ export function parseArgs(argv: string[]): Args | null {
   };
 
   let i = 0;
-  const promptParts: string[] = [];
+  let prompt: string | null = null;
   while (i < argv.length) {
     const arg = argv[i]!;
     if (arg === "-h" || arg === "--help") { printHelp(); return null; }
@@ -86,21 +230,39 @@ export function parseArgs(argv: string[]): Args | null {
     if (arg === "--include-partial-messages") { result.includePartial = true; i++; continue; }
     if (arg === "--include-hook-events") { i++; continue; }
     if (arg === "--replay-user-messages") { result.replayUserMessages = true; i++; continue; }
-    if (arg === "--max-turns") { result.maxTurns = parseInt(argv[++i] || "0", 10) || null; i++; continue; }
-    if (arg === "--max-budget-usd") { result.maxBudgetUsd = parseFloat(argv[++i] || "0") || null; i++; continue; }
-    if (arg.startsWith("-")) {
-      result.claudeArgs.push(arg);
-      const flagName = arg.includes("=") ? arg.slice(0, arg.indexOf("=")) : arg;
-      if (VALUE_FLAGS.has(flagName) && !arg.includes("=") && i + 1 < argv.length && !argv[i + 1]!.startsWith("-")) {
-        result.claudeArgs.push(argv[++i]!);
-      }
+    if (arg.startsWith("--max-turns=")) {
+      result.maxTurns = parsePositiveIntegerFlag("--max-turns", arg.slice("--max-turns=".length));
       i++; continue;
     }
-    promptParts.push(arg);
+    if (arg === "--max-turns") {
+      result.maxTurns = parsePositiveIntegerFlag("--max-turns", argv[++i] || "");
+      i++; continue;
+    }
+    if (arg.startsWith("--max-budget-usd=")) {
+      result.maxBudgetUsd = parsePositiveNumberFlag("--max-budget-usd", arg.slice("--max-budget-usd=".length));
+      i++; continue;
+    }
+    if (arg === "--max-budget-usd") {
+      result.maxBudgetUsd = parsePositiveNumberFlag("--max-budget-usd", argv[++i] || "");
+      i++; continue;
+    }
+    if (arg === "--") {
+      prompt = argv[i + 1] ?? null;
+      break;
+    }
+    if (arg.startsWith("-")) {
+      const flagName = argHasValue(arg) ? arg.slice(0, arg.indexOf("=")) : arg;
+      if (!KNOWN_CLAUDE_FLAGS.has(flagName)) throwUnknownOption(arg);
+      if (BOOLEAN_FLAGS.has(flagName) && argHasValue(arg)) throwUnknownOption(arg);
+      result.claudeArgs.push(arg);
+      if (VALUE_FLAGS.has(flagName)) i = consumeValueArgs(argv, i, flagName, result);
+      i++; continue;
+    }
+    if (prompt == null) prompt = arg;
     i++;
   }
 
-  if (promptParts.length > 0) result.prompt = promptParts.join(" ");
+  result.prompt = prompt;
   if (result.outputFormat === "stream-json") {
     result.verbose = true;
     result.includePartial = true;
@@ -132,8 +294,10 @@ Flags:
 
 All other flags pass through to claude (interactive):
   --model, --permission-mode, --system-prompt, --append-system-prompt,
-  --allowed-tools, --disallowed-tools, --session-id, --continue, --resume,
-  --add-dir, --mcp-config, --bare, --effort, --agent, --agents, --name,
+  --allowedTools/--allowed-tools, --disallowedTools/--disallowed-tools, --tools,
+  --add-dir, --mcp-config, --settings, --json-schema, --debug, --debug-file,
+  --plugin-dir, --plugin-url, --session-id, --continue, --resume,
+  --bare, --effort, --agent, --agents, --name, --worktree,
   --fallback-model, --permission-prompt-tool, --dangerously-skip-permissions
 `);
 }

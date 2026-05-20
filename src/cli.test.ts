@@ -63,14 +63,31 @@ describe("parseArgs", () => {
     expect(args.maxTurns).toBe(5);
   });
 
+  it("parses max-turns in equals form", () => {
+    const args = parseArgs(["--max-turns=5"]) as Args;
+    expect(args.maxTurns).toBe(5);
+  });
+
   it("parses max-budget-usd", () => {
     const args = parseArgs(["--max-budget-usd", "1.50"]) as Args;
     expect(args.maxBudgetUsd).toBe(1.5);
   });
 
-  it("invalid max-turns returns null", () => {
-    const args = parseArgs(["--max-turns", "abc"]) as Args;
-    expect(args.maxTurns).toBeNull();
+  it("parses max-budget-usd in equals form", () => {
+    const args = parseArgs(["--max-budget-usd=1.50"]) as Args;
+    expect(args.maxBudgetUsd).toBe(1.5);
+  });
+
+  it("rejects invalid max-turns", () => {
+    expect(() => parseArgs(["--max-turns", "abc"])).toThrow("Invalid --max-turns: abc");
+    expect(() => parseArgs(["--max-turns=0"])).toThrow("Invalid --max-turns: 0");
+    expect(() => parseArgs(["--max-turns"])).toThrow("Invalid --max-turns: (missing)");
+  });
+
+  it("rejects invalid max-budget-usd", () => {
+    expect(() => parseArgs(["--max-budget-usd", "abc"])).toThrow("Invalid --max-budget-usd: abc");
+    expect(() => parseArgs(["--max-budget-usd=0"])).toThrow("Invalid --max-budget-usd: 0");
+    expect(() => parseArgs(["--max-budget-usd"])).toThrow("Invalid --max-budget-usd: (missing)");
   });
 
   it("passes through --model with value", () => {
@@ -88,6 +105,36 @@ describe("parseArgs", () => {
     expect(args.claudeArgs).toEqual(["--permission-mode", "plan"]);
   });
 
+  it("passes through Claude tool allow/deny aliases with values", () => {
+    const args = parseArgs([
+      "--allowedTools", "WebSearch", "WebFetch", "Bash(git *)",
+      "--disallowedTools", "Edit",
+      "--allowed-tools", "Read",
+      "--disallowed-tools", "Write",
+      "-p", "hello",
+    ]) as Args;
+
+    expect(args.claudeArgs).toEqual([
+      "--allowedTools", "WebSearch", "WebFetch", "Bash(git *)",
+      "--disallowedTools", "Edit",
+      "--allowed-tools", "Read",
+      "--disallowed-tools", "Write",
+    ]);
+    expect(args.prompt).toBe("hello");
+  });
+
+  it("passes through comma-separated Claude tool values", () => {
+    const args = parseArgs(["--allowedTools", "WebSearch,WebFetch", "-p", "hello"]) as Args;
+    expect(args.claudeArgs).toEqual(["--allowedTools", "WebSearch,WebFetch"]);
+    expect(args.prompt).toBe("hello");
+  });
+
+  it("passes through quoted space-separated Claude tool values", () => {
+    const args = parseArgs(["--allowedTools", "Bash(git *) Edit", "-p", "hello"]) as Args;
+    expect(args.claudeArgs).toEqual(["--allowedTools", "Bash(git *) Edit"]);
+    expect(args.prompt).toBe("hello");
+  });
+
   it("passes through newer value flags without treating values as prompts", () => {
     const args = parseArgs([
       "--fallback-model", "claude-sonnet-4-5",
@@ -101,15 +148,380 @@ describe("parseArgs", () => {
     expect(args.prompt).toBe("hello");
   });
 
+  it("passes through Claude scalar value flags", () => {
+    const args = parseArgs([
+      "--json-schema", "{\"type\":\"object\"}",
+      "--debug-file", "/tmp/claude-debug.log",
+      "--remote-control-session-name-prefix", "ci",
+      "--plugin-dir", "/tmp/plugin",
+      "--plugin-url", "https://example.com/plugin.zip",
+      "--thinking", "enabled",
+      "--task-budget", "1000",
+      "--system-prompt-file", "/tmp/system.md",
+      "--append-system-prompt-file", "/tmp/append.md",
+      "--prefill", "draft",
+      "--deep-link-repo", "owner/repo",
+      "--deep-link-last-fetch", "12345",
+      "--resume-session-at", "msg_123",
+      "--rewind-files", "msg_456",
+      "--workload", "cron",
+      "--advisor", "opus",
+      "--messaging-socket-path", "/tmp/claude.sock",
+      "--agent-id", "agent-1",
+      "--agent-name", "Agent One",
+      "--team-name", "Team One",
+      "--agent-color", "blue",
+      "--parent-session-id", "parent-1",
+      "--teammate-mode", "tmux",
+      "--agent-type", "reviewer",
+      "--sdk-url", "ws://localhost:1234",
+      "-n", "named-session",
+      "hello",
+    ]) as Args;
+
+    expect(args.claudeArgs).toEqual([
+      "--json-schema", "{\"type\":\"object\"}",
+      "--debug-file", "/tmp/claude-debug.log",
+      "--remote-control-session-name-prefix", "ci",
+      "--plugin-dir", "/tmp/plugin",
+      "--plugin-url", "https://example.com/plugin.zip",
+      "--thinking", "enabled",
+      "--task-budget", "1000",
+      "--system-prompt-file", "/tmp/system.md",
+      "--append-system-prompt-file", "/tmp/append.md",
+      "--prefill", "draft",
+      "--deep-link-repo", "owner/repo",
+      "--deep-link-last-fetch", "12345",
+      "--resume-session-at", "msg_123",
+      "--rewind-files", "msg_456",
+      "--workload", "cron",
+      "--advisor", "opus",
+      "--messaging-socket-path", "/tmp/claude.sock",
+      "--agent-id", "agent-1",
+      "--agent-name", "Agent One",
+      "--team-name", "Team One",
+      "--agent-color", "blue",
+      "--parent-session-id", "parent-1",
+      "--teammate-mode", "tmux",
+      "--agent-type", "reviewer",
+      "--sdk-url", "ws://localhost:1234",
+      "-n", "named-session",
+    ]);
+    expect(args.prompt).toBe("hello");
+  });
+
+  it("passes through Claude optional value flags", () => {
+    const args = parseArgs([
+      "--resume", "abc123",
+      "-r", "def456",
+      "--debug", "api,hooks",
+      "-d", "!file",
+      "--from-pr", "123",
+      "--remote-control", "sidecar",
+      "--rc", "sidecar-2",
+      "--worktree", "scratch",
+      "-w", "scratch-2",
+      "--teleport", "tele-1",
+      "--remote", "remote description",
+      "--tasks", "tasklist",
+      "hello",
+    ]) as Args;
+
+    expect(args.claudeArgs).toEqual([
+      "--resume", "abc123",
+      "-r", "def456",
+      "--debug", "api,hooks",
+      "-d", "!file",
+      "--from-pr", "123",
+      "--remote-control", "sidecar",
+      "--rc", "sidecar-2",
+      "--worktree", "scratch",
+      "-w", "scratch-2",
+      "--teleport", "tele-1",
+      "--remote", "remote description",
+      "--tasks", "tasklist",
+    ]);
+    expect(args.prompt).toBe("hello");
+  });
+
+  it("passes through Claude optional value flags without values", () => {
+    const args = parseArgs([
+      "--resume",
+      "-r",
+      "--debug",
+      "-d",
+      "--from-pr",
+      "--remote-control",
+      "--rc",
+      "--worktree",
+      "-w",
+      "--teleport",
+      "--remote",
+      "--tasks",
+      "-p", "hello",
+    ]) as Args;
+
+    expect(args.claudeArgs).toEqual([
+      "--resume",
+      "-r",
+      "--debug",
+      "-d",
+      "--from-pr",
+      "--remote-control",
+      "--rc",
+      "--worktree",
+      "-w",
+      "--teleport",
+      "--remote",
+      "--tasks",
+    ]);
+    expect(args.prompt).toBe("hello");
+  });
+
+  it("passes through Claude boolean flags without consuming the prompt", () => {
+    const args = parseArgs([
+      "--bare",
+      "--continue",
+      "-c",
+      "--allow-dangerously-skip-permissions",
+      "--dangerously-skip-permissions",
+      "--strict-mcp-config",
+      "--fork-session",
+      "--no-session-persistence",
+      "--disable-slash-commands",
+      "--mcp-debug",
+      "--ide",
+      "--chrome",
+      "--no-chrome",
+      "--brief",
+      "--tmux",
+      "-d2e",
+      "--debug-to-stderr",
+      "--init",
+      "--init-only",
+      "--maintenance",
+      "--enable-auth-status",
+      "--deep-link-origin",
+      "--plan-mode-required",
+      "--delegate-permissions",
+      "--dangerously-skip-permissions-with-classifiers",
+      "--afk",
+      "--agent-teams",
+      "--enable-auto-mode",
+      "--proactive",
+      "--assistant",
+      "--hard-fail",
+      "hello",
+    ]) as Args;
+
+    expect(args.claudeArgs).toEqual([
+      "--bare",
+      "--continue",
+      "-c",
+      "--allow-dangerously-skip-permissions",
+      "--dangerously-skip-permissions",
+      "--strict-mcp-config",
+      "--fork-session",
+      "--no-session-persistence",
+      "--disable-slash-commands",
+      "--mcp-debug",
+      "--ide",
+      "--chrome",
+      "--no-chrome",
+      "--brief",
+      "--tmux",
+      "-d2e",
+      "--debug-to-stderr",
+      "--init",
+      "--init-only",
+      "--maintenance",
+      "--enable-auth-status",
+      "--deep-link-origin",
+      "--plan-mode-required",
+      "--delegate-permissions",
+      "--dangerously-skip-permissions-with-classifiers",
+      "--afk",
+      "--agent-teams",
+      "--enable-auto-mode",
+      "--proactive",
+      "--assistant",
+      "--hard-fail",
+    ]);
+    expect(args.prompt).toBe("hello");
+  });
+
+  it("passes through Claude variadic value flags until the next flag", () => {
+    const args = parseArgs([
+      "--add-dir", "/tmp/a", "/tmp/b",
+      "--mcp-config", "server-a.json", "server-b.json",
+      "--betas", "beta-a", "beta-b",
+      "--file", "file_abc:a.txt", "file_def:b.txt",
+      "--tools", "Bash", "Read",
+      "--allowedTools", "WebSearch", "WebFetch",
+      "--disallowed-tools", "Edit", "Write",
+      "--channels", "server-a", "server-b",
+      "--dangerously-load-development-channels", "dev-a", "dev-b",
+      "-p", "hello",
+    ]) as Args;
+
+    expect(args.claudeArgs).toEqual([
+      "--add-dir", "/tmp/a", "/tmp/b",
+      "--mcp-config", "server-a.json", "server-b.json",
+      "--betas", "beta-a", "beta-b",
+      "--file", "file_abc:a.txt", "file_def:b.txt",
+      "--tools", "Bash", "Read",
+      "--allowedTools", "WebSearch", "WebFetch",
+      "--disallowed-tools", "Edit", "Write",
+      "--channels", "server-a", "server-b",
+      "--dangerously-load-development-channels", "dev-a", "dev-b",
+    ]);
+    expect(args.prompt).toBe("hello");
+  });
+
+  it("uses -- to separate prompt text after variadic Claude flags", () => {
+    const args = parseArgs(["--add-dir", "/tmp/a", "--", "summarize", "this"]) as Args;
+    expect(args.claudeArgs).toEqual(["--add-dir", "/tmp/a"]);
+    expect(args.prompt).toBe("summarize");
+  });
+
   it("passes through --flag=value form", () => {
     const args = parseArgs(["--model=claude-opus-4-7", "hello"]) as Args;
     expect(args.claudeArgs).toEqual(["--model=claude-opus-4-7"]);
     expect(args.prompt).toBe("hello");
   });
 
-  it("collects prompt as remaining positional args", () => {
+  it("passes through Claude value flags in equals form", () => {
+    const args = parseArgs([
+      "--model=opus",
+      "--allowedTools=WebSearch,WebFetch",
+      "--plugin-dir=/tmp/plugin",
+      "hello",
+    ]) as Args;
+
+    expect(args.claudeArgs).toEqual([
+      "--model=opus",
+      "--allowedTools=WebSearch,WebFetch",
+      "--plugin-dir=/tmp/plugin",
+    ]);
+    expect(args.prompt).toBe("hello");
+  });
+
+  it("rejects missing required Claude scalar flag values", () => {
+    const cases = [
+      ["--model", "model"],
+      ["--permission-mode", "mode"],
+      ["--system-prompt", "prompt"],
+      ["--system-prompt-file", "file"],
+      ["--append-system-prompt", "prompt"],
+      ["--append-system-prompt-file", "file"],
+      ["--session-id", "uuid"],
+      ["--effort", "level"],
+      ["--agent", "agent"],
+      ["--agents", "json"],
+      ["--name", "name"],
+      ["-n", "name"],
+      ["--setting-sources", "sources"],
+      ["--settings", "file-or-json"],
+      ["--fallback-model", "model"],
+      ["--permission-prompt-tool", "tool"],
+      ["--max-thinking-tokens", "tokens"],
+      ["--output-style", "style"],
+      ["--debug-file", "path"],
+      ["--json-schema", "schema"],
+      ["--remote-control-session-name-prefix", "prefix"],
+      ["--plugin-dir", "path"],
+      ["--plugin-url", "url"],
+      ["--thinking", "mode"],
+      ["--task-budget", "tokens"],
+      ["--prefill", "text"],
+      ["--deep-link-repo", "slug"],
+      ["--deep-link-last-fetch", "ms"],
+      ["--resume-session-at", "message id"],
+      ["--rewind-files", "user-message-id"],
+      ["--workload", "tag"],
+      ["--advisor", "model"],
+      ["--messaging-socket-path", "path"],
+      ["--agent-id", "id"],
+      ["--agent-name", "name"],
+      ["--team-name", "name"],
+      ["--agent-color", "color"],
+      ["--parent-session-id", "id"],
+      ["--teammate-mode", "mode"],
+      ["--agent-type", "type"],
+      ["--sdk-url", "url"],
+    ];
+
+    for (const [flag, label] of cases) {
+      expect(() => parseArgs(["hello", flag!])).toThrow(`error: option '${flag} <${label}>' argument missing`);
+      expect(() => parseArgs([flag!, "--model", "opus"])).toThrow(`error: option '${flag} <${label}>' argument missing`);
+    }
+  });
+
+  it("rejects missing required Claude variadic flag values", () => {
+    const cases = [
+      ["--add-dir", "error: option '--add-dir <directories...>' argument missing"],
+      ["--mcp-config", "error: option '--mcp-config <configs...>' argument missing"],
+      ["--betas", "error: option '--betas <betas...>' argument missing"],
+      ["--file", "error: option '--file <specs...>' argument missing"],
+      ["--tools", "error: option '--tools <tools...>' argument missing"],
+      ["--allowedTools", "error: option '--allowedTools, --allowed-tools <tools...>' argument missing"],
+      ["--allowed-tools", "error: option '--allowedTools, --allowed-tools <tools...>' argument missing"],
+      ["--disallowedTools", "error: option '--disallowedTools, --disallowed-tools <tools...>' argument missing"],
+      ["--disallowed-tools", "error: option '--disallowedTools, --disallowed-tools <tools...>' argument missing"],
+      ["--channels", "error: option '--channels <value>' argument missing"],
+      [
+        "--dangerously-load-development-channels",
+        "error: option '--dangerously-load-development-channels <value>' argument missing",
+      ],
+    ];
+
+    for (const [flag, message] of cases) {
+      expect(() => parseArgs([flag!])).toThrow(message);
+      expect(() => parseArgs([flag!, "--model", "opus"])).toThrow(message);
+    }
+  });
+
+  it("uses only the first positional argument as the prompt", () => {
     const args = parseArgs(["-p", "say", "hello", "world"]) as Args;
-    expect(args.prompt).toBe("say hello world");
+    expect(args.prompt).toBe("say");
+  });
+
+  it("matches Claude when extra positional words surround options", () => {
+    const args = parseArgs([
+      "-p", "ello", "world",
+      "--model", "claude-opus-4-6[1M]",
+      "do", "yo", "usee", "model", "param",
+    ]) as Args;
+
+    expect(args.prompt).toBe("ello");
+    expect(args.claudeArgs).toEqual(["--model", "claude-opus-4-6[1M]"]);
+  });
+
+  it("uses -- to pass multi-word prompt text explicitly", () => {
+    const args = parseArgs(["--model", "opus", "--", "say", "hello", "world"]) as Args;
+    expect(args.prompt).toBe("say");
+    expect(args.claudeArgs).toEqual(["--model", "opus"]);
+  });
+
+  it("treats option-looking text after -- as the prompt", () => {
+    const args = parseArgs(["-p", "--", "--model", "opus"]) as Args;
+    expect(args.prompt).toBe("--model");
+    expect(args.claudeArgs).toEqual([]);
+  });
+
+  it("rejects unknown options before spawning Claude", () => {
+    expect(() => parseArgs(["-p", "hi", "--definitely-unknown"])).toThrow(
+      "error: unknown option '--definitely-unknown'",
+    );
+    expect(() => parseArgs(["-p", "hi", "-Z"])).toThrow("error: unknown option '-Z'");
+    expect(() => parseArgs(["-p", "hi", "--unknown=value"])).toThrow(
+      "error: unknown option '--unknown=value'",
+    );
+  });
+
+  it("rejects equals form for Claude boolean flags", () => {
+    expect(() => parseArgs(["-p", "hi", "--tmux=classic"])).toThrow("error: unknown option '--tmux=classic'");
+    expect(() => parseArgs(["-p", "hi", "--bare=true"])).toThrow("error: unknown option '--bare=true'");
   });
 
   it("parses clarp flags after the prompt", () => {
