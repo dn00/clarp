@@ -112,6 +112,13 @@ describe("parseArgs", () => {
     expect(args.prompt).toBe("say hello world");
   });
 
+  it("parses clarp flags after the prompt", () => {
+    const args = parseArgs(["-p", "hi", "--verbose", "--output-format", "json"]) as Args;
+    expect(args.prompt).toBe("hi");
+    expect(args.verbose).toBe(true);
+    expect(args.outputFormat).toBe("json");
+  });
+
   it("sets verbose flag", () => {
     const args = parseArgs(["--verbose"]) as Args;
     expect(args.verbose).toBe(true);

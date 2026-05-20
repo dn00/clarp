@@ -52,6 +52,7 @@ export function parseArgs(argv: string[]): Args | null {
   };
 
   let i = 0;
+  const promptParts: string[] = [];
   while (i < argv.length) {
     const arg = argv[i]!;
     if (arg === "-h" || arg === "--help") { printHelp(); return null; }
@@ -95,10 +96,11 @@ export function parseArgs(argv: string[]): Args | null {
       }
       i++; continue;
     }
-    result.prompt = argv.slice(i).join(" ");
-    break;
+    promptParts.push(arg);
+    i++;
   }
 
+  if (promptParts.length > 0) result.prompt = promptParts.join(" ");
   if (result.outputFormat === "stream-json") {
     result.verbose = true;
     result.includePartial = true;
