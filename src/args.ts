@@ -265,7 +265,6 @@ export function parseArgs(argv: string[]): Args | null {
   result.prompt = prompt;
   if (result.outputFormat === "stream-json") {
     result.verbose = true;
-    result.includePartial = true;
   }
   return result;
 }
@@ -286,7 +285,7 @@ Flags:
   --output-format <format>        text (default), json, stream-json
   --input-format <format>         text (default), stream-json
   --verbose                       Include all events (auto with stream-json)
-  --include-partial-messages      Include streaming deltas (auto with stream-json)
+  --include-partial-messages      Include streaming deltas
   --include-hook-events           Include hook lifecycle events
   --replay-user-messages          Echo accepted user messages back on stdout
   --max-turns <n>                 Stop after N turns

@@ -168,8 +168,11 @@ clarp "explain this function"
 # JSON result
 clarp --output-format json "explain this function"
 
-# Full streaming (token-level events)
+# Stream-json event output
 clarp --output-format stream-json "explain this function"
+
+# Include token-level partial deltas
+clarp --output-format stream-json --include-partial-messages "explain this function"
 ```
 
 ### Piped input
@@ -191,7 +194,9 @@ clarp \
 {"type":"user","message":{"role":"user","content":"now fix it"},"parent_tool_use_id":null}
 ```
 
-Each turn produces a full event cycle: `init → stream_events → assistant → result`. Prompts are queued and dispatched sequentially — clarp waits for Claude to be idle before sending the next prompt.
+Each turn produces a full event cycle: `init → assistant → result`. Add `--include-partial-messages` when you want token-level `stream_event` deltas. Prompts are queued and dispatched sequentially — clarp waits for Claude to be idle before sending the next prompt.
+
+By default, `stream-json` is optimized for clients that consume completed `assistant` and `result` messages. `--include-partial-messages` adds raw token-level `stream_event` records before the completed assistant message; clients that consume both should dedupe or ignore one path.
 
 ### Interrupt
 
@@ -240,8 +245,8 @@ clarp --resume abc123 "let's keep going"
 | `-p, --print` | Print mode (always on, accepted for compatibility) |
 | `--output-format <fmt>` | `text` (default), `json`, or `stream-json` |
 | `--input-format <fmt>` | `text` (default) or `stream-json` |
-| `--verbose` | Include all events (automatic with `stream-json`) |
-| `--include-partial-messages` | Include token-level `stream_event` deltas (automatic with `stream-json`) |
+| `--verbose` | Include verbose non-partial events (automatic with `stream-json`) |
+| `--include-partial-messages` | Include token-level `stream_event` deltas |
 | `--replay-user-messages` | Echo accepted user messages back on stdout |
 | `--max-turns <n>` | Stop after N agentic turns |
 | `--max-budget-usd <n>` | Accepted for compatibility; currently warns and is not enforced |
@@ -273,6 +278,8 @@ These flags are forwarded directly to the interactive Claude process:
 
 Set `CLARP_DEBUG=1` to print clarp's proxy/session diagnostics to stderr. Set `CLARP_DEBUG_PTY=1` only when you need to inspect Claude's hidden PTY screen output.
 
+Set `CLARP_DEBUG_API=1` to print redacted API observation summaries to stderr. This logs request ids, model, token limits, tool counts, output-config shape, and text lengths/hashes; it does not log auth headers or prompt text. Add `CLARP_DEBUG_API_TEXT=1` only when you explicitly want short text previews in those summaries.
+
 ---
 
 ## Feature Parity
@@ -281,7 +288,7 @@ Set `CLARP_DEBUG=1` to print clarp's proxy/session diagnostics to stderr. Set `C
 
 | Event | `claude -p` | `clarp` | Notes |
 |-------|:-----------:|:-------:|-------|
-| `stream_event` (token deltas) | Yes | Yes | Real-time via SSE proxy |
+| `stream_event` (token deltas) | Optional | Optional | Emitted with `--include-partial-messages` |
 | `assistant` (complete messages) | Yes | Yes | Emitted per content block |
 | `system.init` | Yes | Yes | From JSONL transcript or synthesized |
 | `system.session_state_changed` | Yes | Yes | From PID file polling |
@@ -316,10 +323,16 @@ Set `CLARP_DEBUG=1` to print clarp's proxy/session diagnostics to stderr. Set `C
 | | `claude -p` | `clarp` |
 |---|---|---|
 | **Billing** | Metered per-call | Subscription |
-| **Streaming** | Token-level | Token-level (identical) |
+| **Streaming** | Completed stream-json messages by default | Completed stream-json messages by default; token deltas are opt-in |
 | **Terminal** | None | Full PTY (not exposed) |
 | **Sessions** | Per-invocation | Persistent (resume with `--continue`) |
 | **Latency** | Direct API | +~1ms (proxy hop) |
+
+### Known limitations
+
+`stream-json` assistant and result messages are the primary compatibility target. Some non-assistant sideband events differ from native `claude -p` because clarp observes Claude through a hidden PTY plus local proxy instead of Claude Code's internal print-mode pipeline.
+
+Clients should treat unknown non-assistant events as optional metadata. In current parity runs, clarp may emit extra events such as `ping`, `system.status`, `system.session_state_changed`, `system.api_retry`, and `system.post_turn_summary`; native `claude -p` may emit sideband events such as `system.notification`.
 
 ---
 
@@ -328,9 +341,21 @@ Set `CLARP_DEBUG=1` to print clarp's proxy/session diagnostics to stderr. Set `C
 ```bash
 npm test
 npm run test:watch
+npm run parity:stream
 ```
 
 Tests cover SSE parsing, message assembly, output formatting, PID file watching, session lifecycle, permission forwarding, and protocol parity against captured `claude -p` output. Includes schema validation for all 25 SDK output types and all 21 control request subtypes.
+
+`npm run parity:stream` builds clarp, runs a 20-prompt stream-json session through native `claude -p` and clarp, writes JSONL/debug artifacts under `.parity-runs/`, and reports public stream differences. Use `-- --prompts prompts.txt --limit 20 --model sonnet` to run a custom prompt list. Use `-- --extra-args "--permission-mode plan"` for one flag variant, or `-- --cases cases.json` for a matrix of `{ "name": "...", "args": ["--flag", "value"], "prompts": ["..."] }` cases.
+
+When changing output behavior, run the parity harness in both modes:
+
+```bash
+npm run parity:stream -- --limit 3 --model sonnet
+npm run parity:stream -- --limit 3 --model sonnet --extra-args "--include-partial-messages"
+```
+
+The first command should not emit `stream_event` deltas. The second should emit them and still produce one completed `assistant` plus one `result` per turn.
 
 ---
 
@@ -345,6 +370,8 @@ src/
 ├── prompt-queue.ts           # Async prompt queue with idle-wait
 ├── output.ts                 # Emit stream-json / text / json on stdout
 ├── message-assembler.ts      # Accumulate SSE events → complete assistant messages
+├── message-request-filter.ts # Keep internal Claude API calls out of public output
+├── api-debug.ts              # Redacted proxy API diagnostics
 ├── proxy.ts                  # HTTP proxy server + SSE event extraction
 ├── pty-host.ts               # Spawn claude in PTY, send keystrokes
 ├── pid-watcher.ts            # Poll PID file for status, read transcript

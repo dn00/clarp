@@ -52,8 +52,14 @@ describe("parseArgs", () => {
     expect(() => parseArgs(["--input-format=banana"])).toThrow("Invalid --input-format");
   });
 
-  it("stream-json auto-enables verbose and includePartial", () => {
+  it("stream-json auto-enables verbose without partial deltas", () => {
     const args = parseArgs(["--output-format", "stream-json"]) as Args;
+    expect(args.verbose).toBe(true);
+    expect(args.includePartial).toBe(false);
+  });
+
+  it("sets includePartial only when explicitly requested", () => {
+    const args = parseArgs(["--output-format", "stream-json", "--include-partial-messages"]) as Args;
     expect(args.verbose).toBe(true);
     expect(args.includePartial).toBe(true);
   });

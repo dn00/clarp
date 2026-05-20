@@ -1,4 +1,5 @@
 import type * as http from "node:http";
+import { ApiDebugLogger, isApiDebugEnabled } from "../api-debug.js";
 import { startProxy } from "../proxy.js";
 import type { Observation, ObservationBackend, BackendCapabilities } from "./types.js";
 
@@ -23,6 +24,7 @@ export class ProxyBackend implements ObservationBackend {
   private buffer: Observation[] = [];
   private observingStarted = false;
   private stopped = false;
+  private apiDebug = isApiDebugEnabled() ? new ApiDebugLogger() : null;
 
   constructor(private log: (msg: string) => void = () => {}) {}
 
@@ -30,7 +32,9 @@ export class ProxyBackend implements ObservationBackend {
     if (this.server) return;
     this.log("Starting proxy...");
     const { server, port } = await startProxy({
-      onSSEEvent: (event) => {
+      onSSEEvent: (event, _path, info) => {
+        this.apiDebug?.onSSEEvent(event, info);
+        if (!info.observe) return;
         const p = event.parsed as Record<string, unknown> | undefined;
         this.log(`SSE: ${p?.type || event.event || "?"}`);
         this.emit({ kind: "sse", event });
@@ -46,6 +50,9 @@ export class ProxyBackend implements ObservationBackend {
       },
       onRateLimit: (info) => {
         this.emit({ kind: "rate_limit", statusCode: info.statusCode, retryAfter: info.retryAfter });
+      },
+      onRequestBody: (body, path, info) => {
+        this.apiDebug?.onRequestBody(body, path, info);
       },
     });
     this.server = server;
