@@ -14,7 +14,6 @@ import {
 import * as output from "./output.js";
 
 const READY_TIMEOUT_MS = 30_000;
-
 type PidWatcherLike = Pick<
   PidWatcher,
   "start" | "stop" | "getSessionId" | "getTranscriptPath" | "readTranscriptInit" | "readTranscriptEvents"
@@ -332,7 +331,6 @@ export class SessionController {
       this.readyWaiter = null;
     }
     return new Promise((resolve, reject) => {
-      // Without this timeout a missing PID file or trust dialog can hang forever.
       const timer = setTimeout(() => {
         if (this.readyWaiter?.timer === timer) {
           this.readyWaiter = null;
