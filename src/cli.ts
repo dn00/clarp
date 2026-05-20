@@ -2,6 +2,7 @@
 
 import { parseArgs } from "./args.js";
 import { ProxyBackend } from "./backends/proxy-backend.js";
+import { installFatalCleanup, type FatalCleanupHandle } from "./fatal-cleanup.js";
 import * as output from "./output.js";
 import { spawnClaude } from "./pty-host.js";
 import { SessionController } from "./session.js";
@@ -40,6 +41,7 @@ async function main(): Promise<void> {
 
   let controller: SessionController | null = null;
   let earlyExitCode: number | null = null;
+  let fatalCleanup: FatalCleanupHandle | null = null;
 
   log(`Spawning: claude ${claudeArgs.join(" ")}`);
   const ptyHandle = spawnClaude(
@@ -51,6 +53,7 @@ async function main(): Promise<void> {
         // PTY output — discard in headless mode
       },
       onExit: (code: number) => {
+        fatalCleanup?.markChildExited();
         if (controller) {
           controller.handleClaudeExit(code);
         } else {
@@ -60,6 +63,7 @@ async function main(): Promise<void> {
     },
   );
   log(`PID: ${ptyHandle.pid}`);
+  fatalCleanup = installFatalCleanup(ptyHandle);
 
   controller = new SessionController({
     ptyHandle,
@@ -93,6 +97,7 @@ async function main(): Promise<void> {
   });
 
   if (earlyExitCode != null) {
+    fatalCleanup.markChildExited();
     controller.handleClaudeExit(earlyExitCode);
     return;
   }
