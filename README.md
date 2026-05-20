@@ -140,7 +140,20 @@ npm install -g clarp-cli
 
 **Platform notes:**
 - macOS, Linux, Windows (via WSL or native) supported
-- If you see `posix_spawnp failed`, run `npm rebuild node-pty` to compile the native PTY module from source (requires Xcode CLI tools on macOS)
+- If you see `posix_spawnp failed`, reinstall under Node.js 20-24 first. On macOS, `node-pty`'s packaged `spawn-helper` may also lose its executable bit during install:
+
+```bash
+chmod +x "$(npm root -g)/clarp-cli/node_modules/node-pty/prebuilds/darwin-arm64/spawn-helper"
+```
+
+Fish users should use `chmod +x (npm root -g)/clarp-cli/node_modules/node-pty/prebuilds/darwin-arm64/spawn-helper`. If that does not fix it, rebuild the installed PTY module manually:
+
+```bash
+cd "$(npm root -g)/clarp-cli"
+npx node-gyp rebuild --directory=node_modules/node-pty
+```
+
+Fish users should use `cd (npm root -g)/clarp-cli`. Source compilation requires Xcode Command Line Tools on macOS.
 
 ---
 
@@ -335,7 +348,7 @@ src/
 
 - **Requires Claude Code** installed and authenticated on the target machine
 - **`node-pty` native module** may need source compilation on some platforms
-- **Trust dialog** — Claude shows a workspace trust dialog for untrusted directories. Use `--dangerously-skip-permissions` or work in a trusted project.
+- **Trust dialog** — clarp runs Claude Code in a hidden interactive PTY, so workspace trust prompts cannot be answered in place. If Claude asks to trust the current folder, clarp exits with a message. Run `claude` in that directory once and choose "Yes, I trust this folder", or use `--dangerously-skip-permissions` when appropriate.
 - **MCP control requests** (`mcp_status`, `mcp_message`, etc.) are not supported — these are SDK-specific
 - **`--json-schema`** is not supported — would require modifying API request bodies
 - **`ANTHROPIC_BASE_URL`** — if Claude Code stops honoring this environment variable, the proxy approach breaks. A JSONL transcript fallback backend is planned.
@@ -393,7 +406,6 @@ Issues and PRs welcome. Please include test cases for any new features.
 git clone https://github.com/dn00/clarp.git
 cd clarp
 npm install
-npm rebuild node-pty    # if needed
 npm test
 npm run build           # compile TypeScript
 ```

@@ -2,9 +2,10 @@
 
 import { parseArgs } from "./args.js";
 import { ProxyBackend } from "./backends/proxy-backend.js";
+import { createWorkspaceTrustPromptDetector, stripTerminalControls } from "./claude-prompts.js";
 import { installFatalCleanup, type FatalCleanupHandle } from "./fatal-cleanup.js";
 import * as output from "./output.js";
-import { spawnClaude } from "./pty-host.js";
+import { spawnClaude, type PtyHandle } from "./pty-host.js";
 import { SessionController } from "./session.js";
 import { StdinReader } from "./stdin-reader.js";
 
@@ -42,18 +43,44 @@ async function main(): Promise<void> {
   let controller: SessionController | null = null;
   let earlyExitCode: number | null = null;
   let fatalCleanup: FatalCleanupHandle | null = null;
+  let trustPromptDetected = false;
+  let ptyHandle: PtyHandle | null = null;
 
   log(`Spawning: claude ${claudeArgs.join(" ")}`);
-  const ptyHandle = spawnClaude(
+  const detectWorkspaceTrustPrompt = createWorkspaceTrustPromptDetector(() => {
+    trustPromptDetected = true;
+    process.stderr.write(
+      `clarp error: Claude Code is asking to trust this workspace (${args.cwd}), but clarp runs Claude in a hidden PTY.\n` +
+      "Run `claude` in this directory and choose \"Yes, I trust this folder\", then retry clarp. " +
+      "Alternatively, retry with --dangerously-skip-permissions if that is appropriate for this workspace.\n",
+    );
+    if (controller) {
+      controller.shutdown(1).catch((err: Error) => {
+        process.stderr.write(`clarp shutdown error: ${err.message}\n`);
+        process.exit(1);
+      });
+    } else {
+      ptyHandle?.kill("SIGTERM");
+    }
+  });
+  ptyHandle = spawnClaude(
     claudeArgs,
     backend.getClaudeEnv(),
     args.cwd,
     {
-      onData: (_data: string) => {
-        // PTY output — discard in headless mode
+      onData: (data: string) => {
+        if (args.verbose) {
+          const text = stripTerminalControls(data).trim();
+          if (text) process.stderr.write(`[clarp] Claude PTY: ${text}\n`);
+        }
+        detectWorkspaceTrustPrompt(data);
       },
       onExit: (code: number) => {
         fatalCleanup?.markChildExited();
+        if (trustPromptDetected && !controller) {
+          earlyExitCode = 1;
+          return;
+        }
         if (controller) {
           controller.handleClaudeExit(code);
         } else {
@@ -98,7 +125,11 @@ async function main(): Promise<void> {
 
   if (earlyExitCode != null) {
     fatalCleanup.markChildExited();
-    controller.handleClaudeExit(earlyExitCode);
+    if (trustPromptDetected) {
+      await controller.shutdown(earlyExitCode);
+    } else {
+      controller.handleClaudeExit(earlyExitCode);
+    }
     return;
   }
 
