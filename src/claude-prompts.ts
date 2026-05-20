@@ -11,6 +11,10 @@ export function isWorkspaceTrustPrompt(text: string): boolean {
     && compact.includes("noexit");
 }
 
+export function shouldAutoConfirmWorkspaceTrust(claudeArgs: string[]): boolean {
+  return claudeArgs.includes("--dangerously-skip-permissions");
+}
+
 export function createWorkspaceTrustPromptDetector(onDetected: () => void): (data: string) => void {
   let buffer = "";
   let detected = false;

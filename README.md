@@ -254,13 +254,24 @@ These flags are forwarded directly to the interactive Claude process:
 |------|------|
 | `--model` | `--permission-mode` |
 | `--system-prompt` | `--append-system-prompt` |
-| `--allowed-tools` | `--disallowed-tools` |
-| `--session-id` | `--continue` / `--resume` |
-| `--add-dir` | `--mcp-config` |
-| `--bare` | `--effort` |
+| `--json-schema` | `--output-style` |
+| `--allowedTools` / `--allowed-tools` | `--disallowedTools` / `--disallowed-tools` |
+| `--tools` | `--file` |
+| `--session-id` | `-c, --continue` / `-r, --resume` |
+| `--add-dir` | `--mcp-config` / `--strict-mcp-config` |
+| `--bare` | `--effort` / `--max-thinking-tokens` |
 | `--agent` / `--agents` | `--name` |
 | `--fallback-model` | `--permission-prompt-tool` |
-| `--dangerously-skip-permissions` | `--settings` |
+| `--settings` | `--setting-sources` |
+| `--dangerously-skip-permissions` | `--allow-dangerously-skip-permissions` |
+| `--debug` / `--debug-file` | `--mcp-debug` |
+| `--plugin-dir` | `--plugin-url` |
+| `--remote-control` | `--remote-control-session-name-prefix` |
+| `--worktree` | `--from-pr` |
+| `--chrome` / `--no-chrome` | `--ide` |
+| `--brief` | `--tmux` |
+
+Set `CLARP_DEBUG=1` to print clarp's proxy/session diagnostics to stderr. Set `CLARP_DEBUG_PTY=1` only when you need to inspect Claude's hidden PTY screen output.
 
 ---
 
@@ -348,7 +359,7 @@ src/
 
 - **Requires Claude Code** installed and authenticated on the target machine
 - **`node-pty` native module** may need source compilation on some platforms
-- **Trust dialog** — clarp runs Claude Code in a hidden interactive PTY, so workspace trust prompts cannot be answered in place. If Claude asks to trust the current folder, clarp exits with a message. Run `claude` in that directory once and choose "Yes, I trust this folder", or use `--dangerously-skip-permissions` when appropriate.
+- **Trust dialog** — clarp runs Claude Code in a hidden interactive PTY. If Claude asks to trust the current folder, clarp exits with a message. Run `claude` in that directory once and choose "Yes, I trust this folder". If `--dangerously-skip-permissions` is passed, clarp auto-confirms Claude's workspace trust prompt.
 - **MCP control requests** (`mcp_status`, `mcp_message`, etc.) are not supported — these are SDK-specific
 - **`--json-schema`** is not supported — would require modifying API request bodies
 - **`ANTHROPIC_BASE_URL`** — if Claude Code stops honoring this environment variable, the proxy approach breaks. A JSONL transcript fallback backend is planned.

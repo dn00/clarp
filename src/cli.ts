@@ -2,15 +2,24 @@
 
 import { parseArgs } from "./args.js";
 import { ProxyBackend } from "./backends/proxy-backend.js";
-import { createWorkspaceTrustPromptDetector, stripTerminalControls } from "./claude-prompts.js";
+import {
+  createWorkspaceTrustPromptDetector,
+  shouldAutoConfirmWorkspaceTrust,
+  stripTerminalControls,
+} from "./claude-prompts.js";
 import { installFatalCleanup, type FatalCleanupHandle } from "./fatal-cleanup.js";
 import * as output from "./output.js";
 import { spawnClaude, type PtyHandle } from "./pty-host.js";
 import { SessionController } from "./session.js";
 import { StdinReader } from "./stdin-reader.js";
 
-function debug(msg: string, verbose: boolean): void {
-  if (verbose) process.stderr.write(`[clarp] ${msg}\n`);
+function isEnvEnabled(name: string): boolean {
+  const value = process.env[name]?.toLowerCase();
+  return value === "1" || value === "true" || value === "yes";
+}
+
+function debug(msg: string, enabled: boolean): void {
+  if (enabled) process.stderr.write(`[clarp] ${msg}\n`);
 }
 
 async function main(): Promise<void> {
@@ -30,7 +39,9 @@ async function main(): Promise<void> {
     replayUserMessages: args.replayUserMessages,
   });
 
-  const log = (msg: string) => debug(msg, args.verbose);
+  const debugLogs = isEnvEnabled("CLARP_DEBUG");
+  const debugPty = isEnvEnabled("CLARP_DEBUG_PTY");
+  const log = (msg: string) => debug(msg, debugLogs);
   if (args.maxBudgetUsd != null) {
     process.stderr.write("clarp warning: --max-budget-usd is accepted for compatibility but is not enforced yet.\n");
   }
@@ -45,10 +56,16 @@ async function main(): Promise<void> {
   let fatalCleanup: FatalCleanupHandle | null = null;
   let trustPromptDetected = false;
   let ptyHandle: PtyHandle | null = null;
+  const shouldAutoTrustWorkspace = shouldAutoConfirmWorkspaceTrust(args.claudeArgs);
 
   log(`Spawning: claude ${claudeArgs.join(" ")}`);
   const detectWorkspaceTrustPrompt = createWorkspaceTrustPromptDetector(() => {
     trustPromptDetected = true;
+    if (shouldAutoTrustWorkspace) {
+      log("Auto-confirming Claude workspace trust prompt because --dangerously-skip-permissions was passed.");
+      ptyHandle?.write("\r");
+      return;
+    }
     process.stderr.write(
       `clarp error: Claude Code is asking to trust this workspace (${args.cwd}), but clarp runs Claude in a hidden PTY.\n` +
       "Run `claude` in this directory and choose \"Yes, I trust this folder\", then retry clarp. " +
@@ -69,7 +86,7 @@ async function main(): Promise<void> {
     args.cwd,
     {
       onData: (data: string) => {
-        if (args.verbose) {
+        if (debugPty) {
           const text = stripTerminalControls(data).trim();
           if (text) process.stderr.write(`[clarp] Claude PTY: ${text}\n`);
         }
@@ -138,6 +155,10 @@ async function main(): Promise<void> {
 }
 
 main().catch((err: Error) => {
-  process.stderr.write(`clarp fatal: ${err.message}\n`);
+  if (err.message.startsWith("error: ")) {
+    process.stderr.write(`${err.message}\n`);
+  } else {
+    process.stderr.write(`clarp fatal: ${err.message}\n`);
+  }
   process.exit(1);
 });
