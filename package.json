@@ -17,6 +17,7 @@
   "files": [
     "bin/",
     "dist/",
+    "scripts/",
     "README.md",
     "LICENSE"
   ],
@@ -24,6 +25,7 @@
     "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
     "build": "npm run clean && tsc",
     "prepublishOnly": "npm test && npm run build && npm pack --dry-run",
+    "parity:stream": "npm run build && node scripts/parity-stream.mjs",
     "start": "node dist/cli.js",
     "test": "vitest run",
     "test:watch": "vitest"

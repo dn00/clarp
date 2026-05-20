@@ -1,6 +1,8 @@
 import * as http from "node:http";
 import * as https from "node:https";
 import { URL } from "node:url";
+import type { ProxyRequestInfo } from "./api-debug.js";
+import { shouldObserveMessagesRequest } from "./message-request-filter.js";
 
 export type SSEEvent = {
   event?: string;
@@ -13,16 +15,17 @@ export type SSEEvent = {
  * clarp's output pipeline without changing the bytes sent back to Claude.
  */
 export type ProxyCallbacks = {
-  onSSEEvent: (event: SSEEvent, requestPath: string) => void;
+  onSSEEvent: (event: SSEEvent, requestPath: string, info: ProxyRequestInfo) => void;
   onProxyError: (error: Error) => void;
   onRequestStart: (method: string, path: string) => void;
   onRequestEnd: (method: string, path: string, statusCode: number) => void;
   onRateLimit?: (info: { statusCode: number; retryAfter?: string; path: string }) => void;
-  onRequestBody?: (body: Record<string, unknown>, path: string) => void;
+  onRequestBody?: (body: Record<string, unknown>, path: string, info: ProxyRequestInfo) => void;
 };
 
 const UPSTREAM = "https://api.anthropic.com";
 const DEFAULT_UPSTREAM_TIMEOUT_MS = 120_000;
+let nextProxyRequestId = 0;
 
 /**
  * Creates a loopback HTTP proxy that forwards Claude's Anthropic API requests
@@ -36,6 +39,7 @@ export function createProxy(
   return http.createServer((clientReq, clientRes) => {
     const reqPath = clientReq.url || "/";
     const method = clientReq.method || "GET";
+    const requestId = String(++nextProxyRequestId);
     callbacks.onRequestStart(method, reqPath);
 
     const upstream = new URL(reqPath, UPSTREAM);
@@ -52,9 +56,14 @@ export function createProxy(
     clientReq.on("data", (chunk: Buffer) => bodyChunks.push(chunk));
     clientReq.on("end", () => {
       const body = Buffer.concat(bodyChunks);
-      if (reqPath.startsWith("/v1/messages") && body.length > 0 && callbacks.onRequestBody) {
+      let observeMessagesSSE = reqPath.startsWith("/v1/messages");
+      const requestInfo: ProxyRequestInfo = { requestId, observe: observeMessagesSSE };
+      if (observeMessagesSSE && body.length > 0) {
         try {
-          callbacks.onRequestBody(JSON.parse(body.toString("utf8")) as Record<string, unknown>, reqPath);
+          const parsedBody = JSON.parse(body.toString("utf8")) as Record<string, unknown>;
+          observeMessagesSSE = shouldObserveMessagesRequest(parsedBody);
+          requestInfo.observe = observeMessagesSSE;
+          callbacks.onRequestBody?.(parsedBody, reqPath, requestInfo);
         } catch {}
       }
       let upstreamDone = false;
@@ -99,7 +108,7 @@ export function createProxy(
               const result = extractSSEEvents(sseBuf);
               sseBuf = result.remainder;
               for (const evt of result.complete) {
-                callbacks.onSSEEvent(evt, reqPath);
+                callbacks.onSSEEvent(evt, reqPath, requestInfo);
               }
             });
             upstreamRes.on("end", () => {
@@ -107,7 +116,7 @@ export function createProxy(
               if (sseBuf.trim().length > 0) {
                 const result = extractSSEEvents(sseBuf + "\n\n");
                 for (const evt of result.complete) {
-                  callbacks.onSSEEvent(evt, reqPath);
+                  callbacks.onSSEEvent(evt, reqPath, requestInfo);
                 }
               }
               clientRes.end();
