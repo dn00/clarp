@@ -1,0 +1,53 @@
+{
+  "name": "clarp-cli",
+  "version": "0.1.0",
+  "description": "Drop-in replacement for claude -p. Uses your Claude Code subscription instead of metered API pricing.",
+  "type": "module",
+  "author": "dn00",
+  "homepage": "https://github.com/dn00/clarp#readme",
+  "bugs": {
+    "url": "https://github.com/dn00/clarp/issues"
+  },
+  "engines": {
+    "node": ">=20 <25"
+  },
+  "bin": {
+    "clarp": "./bin/clarp.js"
+  },
+  "files": [
+    "bin/",
+    "dist/",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
+    "build": "npm run clean && tsc",
+    "prepublishOnly": "npm test && npm run build && npm pack --dry-run",
+    "start": "node dist/cli.js",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "node-pty": "^1.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.5.0",
+    "vitest": "^4.1.6"
+  },
+  "keywords": [
+    "claude",
+    "claude-code",
+    "cli",
+    "proxy",
+    "streaming",
+    "sse",
+    "anthropic"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dn00/clarp"
+  }
+}

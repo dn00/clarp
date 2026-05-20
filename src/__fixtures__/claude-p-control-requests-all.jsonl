@@ -1,0 +1,29 @@
+{"type":"control_request","request_id":"int-001","request":{"subtype":"interrupt"}}
+{"type":"control_request","request_id":"perm-001","request":{"subtype":"can_use_tool","tool_name":"Bash","input":{"command":"rm -rf /tmp/test"},"permission_suggestions":[],"blocked_path":null,"decision_reason":"destructive command","tool_use_id":"toolu_01","description":"Delete /tmp/test","title":"Run Bash command","display_name":"Bash"}}
+{"type":"control_request","request_id":"init-001","request":{"subtype":"initialize","hooks":{"PreToolUse":[{"matcher":"Bash","hookCallbackIds":["cb-001"],"timeout":5000}],"UserPromptSubmit":[{"hookCallbackIds":["cb-002"]}]},"sdkMcpServers":[],"jsonSchema":null,"systemPrompt":null,"appendSystemPrompt":"Always be concise.","agents":{},"promptSuggestions":true,"agentProgressSummaries":true}}
+{"type":"control_request","request_id":"mode-001","request":{"subtype":"set_permission_mode","mode":"acceptEdits"}}
+{"type":"control_request","request_id":"model-001","request":{"subtype":"set_model","model":"claude-sonnet-4-6"}}
+{"type":"control_request","request_id":"think-001","request":{"subtype":"set_max_thinking_tokens","max_thinking_tokens":4096}}
+{"type":"control_request","request_id":"think-002","request":{"subtype":"set_max_thinking_tokens","max_thinking_tokens":null}}
+{"type":"control_request","request_id":"mcp-status-001","request":{"subtype":"mcp_status"}}
+{"type":"control_request","request_id":"ctx-001","request":{"subtype":"get_context_usage"}}
+{"type":"control_request","request_id":"hook-001","request":{"subtype":"hook_callback","callback_id":"cb-001","tool_use_id":"toolu_02","input":{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"npm test"},"tool_use_id":"toolu_02"}}}
+{"type":"control_request","request_id":"mcp-msg-001","request":{"subtype":"mcp_message","server_name":"my-server","message":{"jsonrpc":"2.0","id":1,"method":"tools/list"}}}
+{"type":"control_request","request_id":"rewind-001","request":{"subtype":"rewind_files","user_message_id":"uuid-msg-001","dry_run":true}}
+{"type":"control_request","request_id":"cancel-001","request":{"subtype":"cancel_async_message","message_uuid":"uuid-async-001"}}
+{"type":"control_request","request_id":"seed-001","request":{"subtype":"seed_read_state","path":"/repo/src/file.ts","mtime":1710000000000}}
+{"type":"control_request","request_id":"mcp-set-001","request":{"subtype":"mcp_set_servers","servers":{"my-server":{"type":"stdio","command":"node","args":["server.js"],"env":{}}}}}
+{"type":"control_request","request_id":"reload-001","request":{"subtype":"reload_plugins"}}
+{"type":"control_request","request_id":"mcp-reconn-001","request":{"subtype":"mcp_reconnect","serverName":"my-server"}}
+{"type":"control_request","request_id":"mcp-toggle-001","request":{"subtype":"mcp_toggle","serverName":"my-server","enabled":false}}
+{"type":"control_request","request_id":"stop-001","request":{"subtype":"stop_task","task_id":"task-123"}}
+{"type":"control_request","request_id":"flags-001","request":{"subtype":"apply_flag_settings","settings":{"model":"claude-sonnet-4-6","effort":"low"}}}
+{"type":"control_request","request_id":"settings-001","request":{"subtype":"get_settings"}}
+{"type":"control_request","request_id":"elicit-001","request":{"subtype":"elicitation","mcp_server_name":"auth-server","message":"Please authorize access","mode":"url","url":"https://example.com/auth","elicitation_id":"elicit-abc","requested_schema":{}}}
+{"type":"control_cancel_request","request_id":"perm-001"}
+{"type":"control_response","response":{"subtype":"success","request_id":"perm-001","response":{"behavior":"allow","toolUseID":"toolu_01"}}}
+{"type":"control_response","response":{"subtype":"success","request_id":"perm-001","response":{"behavior":"deny","message":"Not allowed right now","toolUseID":"toolu_01"}}}
+{"type":"control_response","response":{"subtype":"success","request_id":"perm-001","response":{"behavior":"allow","toolUseID":"toolu_01","updatedPermissions":[{"type":"addRules","rules":[{"toolName":"Bash","ruleContent":"npm test"}],"behavior":"allow","destination":"session"}]}}}
+{"type":"control_response","response":{"subtype":"success","request_id":"hook-001","response":{"continue":true,"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":"example-project is tracking this."}}}}
+{"type":"control_response","response":{"subtype":"success","request_id":"elicit-001","response":{"action":"accept","content":{"token":"abc123"}}}}
+{"type":"control_response","response":{"subtype":"success","request_id":"elicit-001","response":{"action":"decline"}}}
