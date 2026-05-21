@@ -44,6 +44,7 @@ export class SessionController {
   private turnCount = 0;
   private turnStart = 0;
   private claudeReady = false;
+  private waitingForAction = false;
   private processExited = false;
   private stdinClosed = false;
   private pendingPermissionRequestId: string | null = null;
@@ -115,8 +116,10 @@ export class SessionController {
     output.emitStatus(status, waitingFor);
 
     if (status === "busy") {
+      this.waitingForAction = false;
       output.emitSessionStateChanged("running");
     } else if (status === "waiting") {
+      this.waitingForAction = true;
       output.emitSessionStateChanged("requires_action");
       if (this.opts.args.inputFormat !== "stream-json" && !this.permissionWarningShown) {
         this.permissionWarningShown = true;
@@ -140,6 +143,7 @@ export class SessionController {
         }
       }
     } else if (status === "idle") {
+      this.waitingForAction = false;
       output.emitSessionStateChanged("idle");
       this.pendingPermissionRequestId = null;
     }
@@ -167,6 +171,10 @@ export class SessionController {
     if (status === "idle" && !this.claudeReady) {
       this.markReady();
     }
+
+    if (status === "idle") {
+      this.maybeShutdownAfterInputDrained();
+    }
   }
 
   /**
@@ -183,6 +191,7 @@ export class SessionController {
     if (this.processExited) return;
     if (req.subtype === "interrupt") {
       this.log("Interrupt");
+      if (!this.shouldForwardControlInterrupt()) return;
       sendInterrupt(this.opts.ptyHandle);
     } else if (req.subtype === "get_context_usage" && requestId) {
       const usage = output.getContextUsage();
@@ -201,6 +210,7 @@ export class SessionController {
       }
     } else if (req.subtype === "stop_task") {
       this.log("Stop task");
+      if (!this.shouldForwardControlInterrupt()) return;
       sendInterrupt(this.opts.ptyHandle);
     }
   }
@@ -247,9 +257,7 @@ export class SessionController {
    */
   handleStdinEof(): void {
     this.stdinClosed = true;
-    if (!this.turnActive && this.promptQueue.length === 0) {
-      this.requestShutdown(0);
-    }
+    this.maybeShutdownAfterInputDrained();
   }
 
   /**
@@ -308,11 +316,10 @@ export class SessionController {
     while (!this.processExited && !this.shuttingDown) {
       const hasItem = await this.promptQueue.waitForItem();
       if (!hasItem || this.processExited || this.shuttingDown) break;
-      const item = this.promptQueue.dequeue();
-      if (!item) continue;
-
       await this.waitForReady();
       if (this.processExited || this.shuttingDown) break;
+      const item = this.promptQueue.dequeue();
+      if (!item) continue;
 
       this.log(`Sending: ${item.content.slice(0, 80)}`);
       output.resetAccumulatedText();
@@ -359,6 +366,10 @@ export class SessionController {
     }
   }
 
+  private shouldForwardControlInterrupt(): boolean {
+    return this.turnActive || this.waitingForAction || this.pendingPermissionRequestId !== null;
+  }
+
   private completeTurn(): void {
     this.turnActive = false;
     const text = output.getAccumulatedText();
@@ -394,10 +405,13 @@ export class SessionController {
     }
 
     this.markReady();
-    if (this.stdinClosed && this.promptQueue.length === 0) {
-      this.log("stdin closed and queue empty, exiting");
-      this.requestShutdown(0);
-    }
+    this.maybeShutdownAfterInputDrained();
+  }
+
+  private maybeShutdownAfterInputDrained(): void {
+    if (!this.stdinClosed || this.turnActive || this.promptQueue.length > 0) return;
+    this.log("stdin closed and queue empty, exiting");
+    this.requestShutdown(0);
   }
 
   private emitInitFromTranscriptOrFallback(): void {

@@ -746,4 +746,23 @@ describe("StdinReader", () => {
     expect(events.some(e => e.startsWith("malformed:stream-json input line exceeded"))).toBe(true);
     expect(events).toContain("eof");
   });
+
+  it("stream-json mode parses trailing line on EOF", async () => {
+    const input = new PassThrough();
+    const events: string[] = [];
+    const reader = new StdinReader(input, { inputFormat: "stream-json", prompt: null }, {
+      onUserMessage: (content) => events.push(`user:${content}`),
+      onControlRequest: () => {},
+      onControlResponse: () => {},
+      onKeepAlive: () => {},
+      onEof: () => events.push("eof"),
+      onMalformedLine: (message) => events.push(`malformed:${message}`),
+    });
+
+    reader.start();
+    input.end(JSON.stringify({ type: "user", message: { role: "user", content: "last" } }));
+    await new Promise(resolve => setImmediate(resolve));
+
+    expect(events).toEqual(["user:last", "eof"]);
+  });
 });

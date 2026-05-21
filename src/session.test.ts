@@ -406,14 +406,49 @@ describe("handleControlRequest", () => {
   });
   afterEach(() => { vi.restoreAllMocks(); });
 
-  it("interrupt sends ESC to PTY", () => {
+  it("startup interrupt is a no-op before any active turn", () => {
     const { controller, ptyHandle } = createTestController();
+    controller.handleControlRequest({ subtype: "interrupt" });
+    expect(ptyHandle.writes).not.toContain("\x1b");
+  });
+
+  it("idle interrupt is a no-op", () => {
+    const { controller, fireStatus, ptyHandle } = createTestController();
+    fireStatus("idle");
+    controller.handleControlRequest({ subtype: "interrupt" });
+    expect(ptyHandle.writes).not.toContain("\x1b");
+  });
+
+  it("interrupt still sends ESC while a turn is active", () => {
+    const { controller, fireStatus, ptyHandle } = createTestController();
+    fireStatus("busy");
     controller.handleControlRequest({ subtype: "interrupt" });
     expect(ptyHandle.writes).toContain("\x1b");
   });
 
-  it("stop_task sends ESC to PTY", () => {
+  it("interrupt still sends ESC while Claude is waiting for action", () => {
+    const { controller, fireStatus, ptyHandle } = createTestController();
+    fireStatus("waiting", "permission");
+    controller.handleControlRequest({ subtype: "interrupt" });
+    expect(ptyHandle.writes).toContain("\x1b");
+  });
+
+  it("startup stop_task is a no-op before any active turn", () => {
     const { controller, ptyHandle } = createTestController();
+    controller.handleControlRequest({ subtype: "stop_task" });
+    expect(ptyHandle.writes).not.toContain("\x1b");
+  });
+
+  it("idle stop_task is a no-op", () => {
+    const { controller, fireStatus, ptyHandle } = createTestController();
+    fireStatus("idle");
+    controller.handleControlRequest({ subtype: "stop_task" });
+    expect(ptyHandle.writes).not.toContain("\x1b");
+  });
+
+  it("stop_task still sends ESC while a turn is active", () => {
+    const { controller, fireStatus, ptyHandle } = createTestController();
+    fireStatus("busy");
     controller.handleControlRequest({ subtype: "stop_task" });
     expect(ptyHandle.writes).toContain("\x1b");
   });
@@ -642,6 +677,34 @@ describe("handleStdinEof", () => {
     controller.handleStdinEof();
     vi.advanceTimersByTime(100);
     expect(ptyHandle.kills).toHaveLength(0);
+  });
+
+  it("shuts down after active turn completes when stdin is closed", () => {
+    const { controller, fireStatus, ptyHandle } = createTestController({ args: { inputFormat: "stream-json" } });
+    fireStatus("busy");
+    controller.handleStdinEof();
+    fireStatus("idle");
+    vi.advanceTimersByTime(100);
+    expect(ptyHandle.kills.length).toBeGreaterThan(0);
+  });
+
+  it("does not drop queued prompts while waiting for the previous turn to finish", async () => {
+    const { controller, fireStatus, ptyHandle } = createTestController({ args: { inputFormat: "stream-json" } });
+    await controller.start();
+    controller.enqueuePrompt("one");
+    controller.enqueuePrompt("two");
+    controller.handleStdinEof();
+
+    fireStatus("idle");
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(ptyHandle.writes.join("")).toContain("one");
+
+    fireStatus("busy");
+    fireStatus("idle");
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(ptyHandle.writes.join("")).toContain("two");
   });
 
   it("does not shut down when queue has items", () => {

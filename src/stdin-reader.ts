@@ -61,6 +61,9 @@ export class StdinReader {
       }
     });
     this.input.on("end", () => {
+      const line = buf.trim();
+      if (line.length > 0) parseStdinLine(line, this.callbacks);
+      buf = "";
       this.log("stdin EOF");
       this.callbacks.onEof();
     });
