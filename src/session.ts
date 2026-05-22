@@ -4,6 +4,16 @@ import type { Observation, ObservationBackend } from "./backends/types.js";
 import { PidWatcher, type PidWatcherCallbacks } from "./pid-watcher.js";
 import { PromptQueue } from "./prompt-queue.js";
 import {
+  formatTranscriptApiError,
+  formatTranscriptApiRetry,
+  getTranscriptApiErrorInfo,
+  getTranscriptAssistantText,
+  isRetryExhausted,
+  isTranscriptApiError,
+  isTranscriptApiErrorMessage,
+} from "./transcript-events.js";
+import { TranscriptObserver } from "./transcript-observer.js";
+import {
   sendInterrupt,
   sendPermissionAllow,
   sendPermissionDeny,
@@ -14,6 +24,8 @@ import {
 import * as output from "./output.js";
 
 const READY_TIMEOUT_MS = 30_000;
+const TRANSCRIPT_EVENT_CLOCK_SKEW_MS = 5_000;
+const EMPTY_TURN_TRANSCRIPT_GRACE_MS = 1500;
 type PidWatcherLike = Pick<
   PidWatcher,
   "start" | "stop" | "getSessionId" | "getTranscriptPath" | "readTranscriptInit" | "readTranscriptEvents"
@@ -57,10 +69,16 @@ export class SessionController {
   private cleanupStarted = false;
   private forceExitTimer: ReturnType<typeof setTimeout> | null = null;
   private pidWatcherTimer: ReturnType<typeof setTimeout> | null = null;
+  private emptyTurnTimer: ReturnType<typeof setTimeout> | null = null;
   private cleanupPromise: Promise<void> | null = null;
   private cleanupResolve: (() => void) | null = null;
   private cleanupReject: ((err: unknown) => void) | null = null;
   private shutdownExitCode = 0;
+  private readonly startedAt = Date.now();
+  private backendObservationStarted = false;
+  private transcriptObserver: TranscriptObserver | null = null;
+  private observedTranscriptPath: string | null = null;
+  private transcriptTurnError: { message: string; status?: number } | null = null;
 
   constructor(private opts: SessionControllerOptions) {
     this.pidWatcher = (opts.pidWatcherFactory ?? ((pid, callbacks) => new PidWatcher(pid, callbacks)))(
@@ -97,7 +115,7 @@ export class SessionController {
     if (obs.kind === "sse") {
       output.emitSSE(obs.event);
     } else if (obs.kind === "transcript_line") {
-      output.emitTranscriptEvent(obs.line);
+      this.handleTranscriptLine(obs.line);
     } else if (obs.kind === "rate_limit") {
       output.emitRateLimitEvent({ statusCode: obs.statusCode, retryAfter: obs.retryAfter });
     } else if (obs.kind === "api_retry") {
@@ -113,6 +131,7 @@ export class SessionController {
   handleStatusChange(status: string, waitingFor?: string): void {
     if (this.processExited) return;
     this.log(`Status: ${status}${waitingFor ? ` (${waitingFor})` : ""}`);
+    this.startOrUpdateTranscriptObservation();
     output.emitStatus(status, waitingFor);
 
     if (status === "busy") {
@@ -164,7 +183,7 @@ export class SessionController {
     }
 
     if (status === "idle" && this.turnActive) {
-      this.completeTurn();
+      this.completeTurnOrWaitForTranscriptError();
       return;
     }
 
@@ -238,6 +257,7 @@ export class SessionController {
     if (this.processExited && this.cleanupStarted) return;
     this.processExited = true;
     this.log(`Claude exited: ${code}`);
+    this.clearEmptyTurnTimer();
     if (this.turnActive) {
       this.turnActive = false;
       if (!this.opts.backend.capabilities.emitsResults) {
@@ -307,9 +327,39 @@ export class SessionController {
       this.emitInitFromTranscriptOrFallback();
       this.log(`Session: ${sid}`);
     }
-    await this.opts.backend.startObserving({
-      transcriptPath: this.pidWatcher.getTranscriptPath() ?? undefined,
+    await this.startOrUpdateBackendObservation();
+    this.startOrUpdateTranscriptObservation();
+  }
+
+  private async startOrUpdateBackendObservation(): Promise<void> {
+    if (this.backendObservationStarted) return;
+    this.backendObservationStarted = true;
+    await this.opts.backend.startObserving();
+  }
+
+  private startOrUpdateTranscriptObservation(): void {
+    const transcriptPath = this.pidWatcher.getTranscriptPath();
+    if (!transcriptPath || transcriptPath === this.observedTranscriptPath) return;
+
+    this.transcriptObserver?.stop();
+    this.observedTranscriptPath = transcriptPath;
+    this.transcriptObserver = new TranscriptObserver({
+      transcriptPath,
+      onLine: (line) => {
+        if (this.isCurrentTranscriptErrorEvent(line)) {
+          this.handleTranscriptLine(line);
+        }
+      },
+      onError: (err) => this.log(`Transcript observer error: ${err.message}`),
     });
+    this.transcriptObserver.start();
+  }
+
+  private isCurrentTranscriptErrorEvent(line: Record<string, unknown>): boolean {
+    if (!isTranscriptApiError(line) && !isTranscriptApiErrorMessage(line)) return false;
+    if (typeof line.timestamp !== "string") return true;
+    const timestamp = Date.parse(line.timestamp);
+    return !Number.isFinite(timestamp) || timestamp >= this.startedAt - TRANSCRIPT_EVENT_CLOCK_SKEW_MS;
   }
 
   private async runDispatchLoop(): Promise<void> {
@@ -371,9 +421,15 @@ export class SessionController {
   }
 
   private completeTurn(): void {
+    this.clearEmptyTurnTimer();
     this.turnActive = false;
     const text = output.getAccumulatedText();
     const durationMs = Date.now() - this.turnStart;
+
+    if (this.transcriptTurnError) {
+      this.completeTurnWithError(this.transcriptTurnError.message, this.transcriptTurnError.status, durationMs);
+      return;
+    }
 
     if (!this.opts.backend.capabilities.emitsPostTurnSummary) {
       const transcriptSummaries = this.pidWatcher.readTranscriptEvents("post_turn_summary");
@@ -401,6 +457,105 @@ export class SessionController {
     if (this.opts.args.inputFormat !== "stream-json") {
       this.log("Single prompt complete, exiting");
       this.requestShutdown(0);
+      return;
+    }
+
+    this.markReady();
+    this.maybeShutdownAfterInputDrained();
+  }
+
+  private handleTranscriptLine(line: Record<string, unknown>): void {
+    output.emitTranscriptEvent(line);
+
+    if (isTranscriptApiError(line)) {
+      this.handleTranscriptApiError(line);
+      return;
+    }
+
+    if (isTranscriptApiErrorMessage(line)) {
+      const text = getTranscriptAssistantText(line) || "Claude API error";
+      const status = typeof line.apiErrorStatus === "number" ? line.apiErrorStatus : undefined;
+      this.failCurrentTurnFromTranscript(text, status);
+    }
+  }
+
+  private handleTranscriptApiError(line: Record<string, unknown>): void {
+    const info = getTranscriptApiErrorInfo(line);
+    if (!info) return;
+
+    if (this.opts.args.outputFormat === "text") {
+      process.stderr.write(formatTranscriptApiRetry(info) + "\n");
+    }
+
+    if (isRetryExhausted(info)) {
+      this.failCurrentTurnFromTranscript(formatTranscriptApiError(info), info.status);
+    }
+  }
+
+  private failCurrentTurnFromTranscript(message: string, status?: number): void {
+    this.transcriptTurnError = { message, status };
+    this.clearEmptyTurnTimer();
+    if (this.turnCount === 0) {
+      this.turnCount = 1;
+      this.turnStart = Date.now();
+    }
+
+    if (this.turnActive || this.opts.args.inputFormat !== "stream-json") {
+      const durationMs = this.turnStart ? Date.now() - this.turnStart : undefined;
+      this.turnActive = false;
+      this.completeTurnWithError(message, status, durationMs);
+    }
+  }
+
+  private completeTurnOrWaitForTranscriptError(): void {
+    if (!this.transcriptObserver || output.getAccumulatedText().length > 0 || this.transcriptTurnError) {
+      this.completeTurn();
+      return;
+    }
+
+    if (this.emptyTurnTimer) return;
+    this.emptyTurnTimer = setTimeout(() => {
+      this.emptyTurnTimer = null;
+      if (!this.processExited && !this.shuttingDown && this.turnActive) {
+        this.completeTurn();
+      }
+    }, EMPTY_TURN_TRANSCRIPT_GRACE_MS);
+  }
+
+  private clearEmptyTurnTimer(): void {
+    if (!this.emptyTurnTimer) return;
+    clearTimeout(this.emptyTurnTimer);
+    this.emptyTurnTimer = null;
+  }
+
+  private completeTurnWithError(message: string, status?: number, durationMs?: number): void {
+    this.transcriptTurnError = null;
+
+    if (!this.opts.backend.capabilities.emitsPostTurnSummary) {
+      output.emitPostTurnSummary({
+        statusCategory: "failed",
+        statusDetail: status != null ? `API error ${status}` : "API error",
+        title: message.split("\n")[0]?.slice(0, 80) || "API error",
+        description: message.slice(0, 200),
+        recentAction: "Received Claude API error",
+        needsAction: "",
+        isNoteworthy: true,
+      });
+    }
+
+    if (!this.opts.backend.capabilities.emitsResults) {
+      output.emitResult("error", message, {
+        durationMs,
+        numTurns: this.turnCount,
+        stopReason: "api_error",
+        apiErrorStatus: status,
+      });
+    }
+    output.resetAccumulatedText();
+
+    if (this.opts.args.inputFormat !== "stream-json") {
+      this.log("Single prompt failed, exiting");
+      this.requestShutdown(1);
       return;
     }
 
@@ -438,10 +593,13 @@ export class SessionController {
       clearTimeout(this.pidWatcherTimer);
       this.pidWatcherTimer = null;
     }
+    this.clearEmptyTurnTimer();
 
     const cleanupPromise = this.ensureCleanupPromise();
     void (async () => {
       try {
+        this.transcriptObserver?.stop();
+        this.transcriptObserver = null;
         this.pidWatcher.stop();
         await this.opts.backend.stop();
         this.opts.onExit(exitCode);

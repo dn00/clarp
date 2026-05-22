@@ -118,7 +118,7 @@ clarp's observation layer is pluggable. The proxy is the default backend, but th
 interface ObservationBackend {
   prepare(): Promise<void>;
   getClaudeEnv(): Record<string, string>;
-  startObserving(opts: { transcriptPath?: string }): Promise<void>;
+  startObserving(): Promise<void>;
   stop(): Promise<void>;
   onObservation(cb: (obs: Observation) => void): void;
 }

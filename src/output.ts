@@ -303,7 +303,7 @@ export function emitPostTurnSummary(opts: {
 /**
  * Emits the final result for a turn or process exit.
  */
-export function emitResult(subtype: "success" | "error", result: string, meta?: { costUsd?: number; durationMs?: number; numTurns?: number; stopReason?: string }): void {
+export function emitResult(subtype: "success" | "error", result: string, meta?: { costUsd?: number; durationMs?: number; numTurns?: number; stopReason?: string; apiErrorStatus?: number }): void {
   const msg: Record<string, unknown> = {
     type: "result", subtype, result, is_error: subtype !== "success",
     session_id: sessionId,
@@ -311,6 +311,7 @@ export function emitResult(subtype: "success" | "error", result: string, meta?: 
     ...(meta?.durationMs != null ? { duration_ms: meta.durationMs } : {}),
     ...(meta?.numTurns != null ? { num_turns: meta.numTurns } : {}),
     ...(meta?.stopReason ? { stop_reason: meta.stopReason } : {}),
+    ...(meta?.apiErrorStatus != null ? { api_error_status: meta.apiErrorStatus } : {}),
   };
   if (format === "text") {
     process.stdout.write(result.endsWith("\n") ? result : result + "\n");

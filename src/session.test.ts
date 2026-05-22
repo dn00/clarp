@@ -1,3 +1,6 @@
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SessionController } from "./session.js";
 import type { Args } from "./args.js";
@@ -16,13 +19,13 @@ class FakeBackend implements ObservationBackend {
   };
 
   subscriber: ((obs: Observation) => void) | null = null;
-  startCalls: Array<{ transcriptPath?: string }> = [];
+  startCalls = 0;
   stopCalls = 0;
 
   async prepare(): Promise<void> {}
   getClaudeEnv(): Record<string, string> { return {}; }
-  async startObserving(opts: { transcriptPath?: string }): Promise<void> {
-    this.startCalls.push(opts);
+  async startObserving(): Promise<void> {
+    this.startCalls++;
   }
   async stop(): Promise<void> {
     this.stopCalls++;
@@ -89,7 +92,7 @@ describe("SessionController lifecycle", () => {
     await vi.advanceTimersByTimeAsync(1500);
 
     expect(starts).toHaveLength(1);
-    expect(backend.startCalls).toEqual([{ transcriptPath: undefined }]);
+    expect(backend.startCalls).toBe(1);
   });
 
   it("cleans up only once after repeated Claude exits", async () => {
@@ -185,7 +188,7 @@ function makeFakeWatcher() {
     start: vi.fn(),
     stop: vi.fn(),
     getSessionId: vi.fn(() => "sess-test"),
-    getTranscriptPath: vi.fn(() => "/tmp/transcript.jsonl"),
+    getTranscriptPath: vi.fn(() => null as string | null),
     readTranscriptInit: vi.fn(() => null as Record<string, unknown> | null),
     readTranscriptEvents: vi.fn((_subtype: string) => [] as Record<string, unknown>[]),
   };
@@ -194,11 +197,13 @@ function makeFakeWatcher() {
 function createTestController(overrides?: {
   args?: Partial<Args>;
   caps?: Partial<BackendCapabilities>;
+  transcriptPath?: string | null;
 }) {
   const ptyHandle = mockPtyFull();
   const backend = makeFakeBackend(overrides?.caps);
   let statusCb: PidWatcherCallbacks["onStatusChange"] | null = null;
   const watcher = makeFakeWatcher();
+  watcher.getTranscriptPath.mockReturnValue(overrides?.transcriptPath ?? null);
 
   const exitCodes: number[] = [];
   const args: Args = {
@@ -579,6 +584,121 @@ describe("handleObservation", () => {
     const spy = vi.spyOn(output, "emitTranscriptEvent");
     controller.handleObservation({ kind: "transcript_line", line: { type: "system" } });
     expect(spy).toHaveBeenCalled();
+  });
+
+  it("turns synthetic transcript API errors into error results", () => {
+    const { controller, fireStatus, ptyHandle } = createTestController();
+    fireStatus("busy");
+
+    controller.handleObservation({
+      kind: "transcript_line",
+      line: {
+        type: "assistant",
+        isApiErrorMessage: true,
+        apiErrorStatus: 404,
+        message: {
+          content: [{ type: "text", text: "There's an issue with the selected model." }],
+        },
+      },
+    });
+
+    const result = parsedLines().find(l => l.type === "result");
+    expect(result).toMatchObject({
+      subtype: "error",
+      is_error: true,
+      api_error_status: 404,
+      stop_reason: "api_error",
+      result: "There's an issue with the selected model.",
+    });
+    expect(ptyHandle.kills).toContain("SIGTERM");
+  });
+
+  it("lets a transcript API error beat an empty idle completion race", async () => {
+    vi.useFakeTimers();
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "clarp-session-"));
+    const transcriptPath = path.join(tmpDir, "session.jsonl");
+    fs.writeFileSync(transcriptPath, "");
+    try {
+      const { fireStatus, ptyHandle } = createTestController({ transcriptPath });
+      fireStatus("busy");
+      fireStatus("idle");
+
+      fs.appendFileSync(transcriptPath, JSON.stringify({
+        type: "assistant",
+        isApiErrorMessage: true,
+        apiErrorStatus: 404,
+        timestamp: new Date().toISOString(),
+        message: {
+          content: [{ type: "text", text: "There's an issue with the selected model." }],
+        },
+      }) + "\n");
+      await vi.advanceTimersByTimeAsync(1000);
+
+      const results = parsedLines().filter(l => l.type === "result");
+      expect(results).toHaveLength(1);
+      expect(results[0]).toMatchObject({
+        subtype: "error",
+        result: "There's an issue with the selected model.",
+      });
+      expect(ptyHandle.kills).toContain("SIGTERM");
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+      vi.useRealTimers();
+    }
+  });
+
+  it("turns exhausted transcript API retries into error results", () => {
+    const { controller, fireStatus, ptyHandle } = createTestController();
+    fireStatus("busy");
+
+    controller.handleObservation({
+      kind: "transcript_line",
+      line: {
+        type: "system",
+        subtype: "api_error",
+        retryAttempt: 10,
+        maxRetries: 10,
+        error: {
+          status: 529,
+          error: { error: { type: "overloaded_error", message: "Overloaded" } },
+        },
+      },
+    });
+
+    const result = parsedLines().find(l => l.type === "result");
+    expect(result).toMatchObject({
+      subtype: "error",
+      api_error_status: 529,
+      result: "API Error: 529 Overloaded.",
+    });
+    expect(ptyHandle.kills).toContain("SIGTERM");
+  });
+
+  it("prints transcript retry status in text output mode", () => {
+    const stderr: string[] = [];
+    vi.spyOn(process.stderr, "write").mockImplementation((chunk: any) => {
+      stderr.push(typeof chunk === "string" ? chunk : chunk.toString());
+      return true;
+    });
+    output.configureOutput({ format: "text", verbose: false, includePartial: false });
+    const { controller } = createTestController({ args: { outputFormat: "text" } });
+
+    controller.handleObservation({
+      kind: "transcript_line",
+      line: {
+        type: "system",
+        subtype: "api_error",
+        retryAttempt: 1,
+        maxRetries: 10,
+        retryInMs: 1200,
+        error: {
+          status: 529,
+          error: { error: { type: "overloaded_error", message: "Overloaded" } },
+        },
+      },
+    });
+
+    expect(stderr.join("")).toContain("API Error: 529 Overloaded. retrying in 1s, attempt 1/10.");
   });
 
   it("routes rate_limit to output.emitRateLimitEvent", () => {

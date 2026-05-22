@@ -66,8 +66,7 @@ export class ProxyBackend implements ObservationBackend {
     return { ANTHROPIC_BASE_URL: `http://127.0.0.1:${this.port}` };
   }
 
-  async startObserving(_opts: { transcriptPath?: string }): Promise<void> {
-    if (this.observingStarted) return;
+  async startObserving(): Promise<void> {
     this.observingStarted = true;
   }
 
