@@ -21,6 +21,11 @@ export type PtyHandle = {
 const BRACKETED_PASTE_OPEN = "\x1b[200~";
 const BRACKETED_PASTE_CLOSE = "\x1b[201~";
 
+export function normalizePtyKillSignal(signal: string | undefined, platform = os.platform()): string | undefined {
+  // node-pty's Windows backend throws on POSIX signal args; no-arg kill is its force-kill path.
+  return platform === "win32" ? undefined : signal;
+}
+
 function findClaude(): string {
   if (os.platform() === "win32") {
     try {
@@ -71,7 +76,7 @@ export function spawnClaude(
   return {
     write: (data: string) => proc.write(data),
     resize: (cols: number, rows: number) => proc.resize(cols, rows),
-    kill: (signal?: string) => proc.kill(signal),
+    kill: (signal?: string) => proc.kill(normalizePtyKillSignal(signal)),
     pid: proc.pid,
   };
 }

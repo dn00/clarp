@@ -1,5 +1,13 @@
 import { describe, it, expect } from "vitest";
-import { sendPrompt, sendInterrupt, sendPermissionAllow, sendPermissionDeny, sendSlashCommand, type PtyHandle } from "./pty-host.js";
+import {
+  normalizePtyKillSignal,
+  sendPrompt,
+  sendInterrupt,
+  sendPermissionAllow,
+  sendPermissionDeny,
+  sendSlashCommand,
+  type PtyHandle,
+} from "./pty-host.js";
 
 function mockHandle(): { handle: PtyHandle; writes: string[] } {
   const writes: string[] = [];
@@ -76,5 +84,20 @@ describe("sendSlashCommand", () => {
     const { handle, writes } = mockHandle();
     sendSlashCommand(handle, "");
     expect(writes).toEqual(["/\r"]);
+  });
+});
+
+describe("normalizePtyKillSignal", () => {
+  it("drops signal names on Windows", () => {
+    expect(normalizePtyKillSignal("SIGTERM", "win32")).toBeUndefined();
+  });
+
+  it("preserves signal names on POSIX platforms", () => {
+    expect(normalizePtyKillSignal("SIGTERM", "linux")).toBe("SIGTERM");
+    expect(normalizePtyKillSignal("SIGTERM", "darwin")).toBe("SIGTERM");
+  });
+
+  it("preserves undefined signals", () => {
+    expect(normalizePtyKillSignal(undefined, "linux")).toBeUndefined();
   });
 });
