@@ -13,6 +13,7 @@ export type Args = {
   maxTurns: number | null;
   maxBudgetUsd: number | null;
   prompt: string | null;
+  readPromptFromStdin: boolean;
   claudeArgs: string[];
   cwd: string;
 };
@@ -192,6 +193,7 @@ export function parseArgs(argv: string[]): Args | null {
   const result: Args = {
     outputFormat: "text", inputFormat: "text", verbose: false, includePartial: false,
     replayUserMessages: false, maxTurns: null, maxBudgetUsd: null, prompt: null,
+    readPromptFromStdin: false,
     claudeArgs: [], cwd: process.cwd(),
   };
 
@@ -202,6 +204,10 @@ export function parseArgs(argv: string[]): Args | null {
     if (arg === "-h" || arg === "--help") { printHelp(); return null; }
     if (arg === "-v" || arg === "--version") { console.log(`clarp ${getPackageVersion()}`); return null; }
     if (arg === "-p" || arg === "--print") { i++; continue; }
+    if (arg === "-") {
+      if (prompt == null) result.readPromptFromStdin = true;
+      i++; continue;
+    }
     if (arg.startsWith("--output-format=")) {
       const value = arg.slice("--output-format=".length);
       if (!OUTPUT_FORMATS.has(value as OutputFormat)) throw new Error(`Invalid --output-format: ${value || "(missing)"}`);
@@ -277,6 +283,7 @@ export function printHelp(): void {
 
 Usage:
   clarp [options] [prompt]
+  clarp -p - < prompt.txt
   echo "prompt" | clarp
   clarp --input-format stream-json --output-format stream-json --verbose
 
