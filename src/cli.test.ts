@@ -26,6 +26,20 @@ describe("parseArgs", () => {
     expect(args.prompt).toBe("hello");
   });
 
+  it("treats bare dash as a stdin prompt sentinel", () => {
+    const args = parseArgs(["-p", "-"]) as Args;
+    expect(args.prompt).toBeNull();
+    expect(args.readPromptFromStdin).toBe(true);
+    expect(args.claudeArgs).toEqual([]);
+  });
+
+  it("supports stdin prompt sentinel without -p", () => {
+    const args = parseArgs(["-"]) as Args;
+    expect(args.prompt).toBeNull();
+    expect(args.readPromptFromStdin).toBe(true);
+    expect(args.claudeArgs).toEqual([]);
+  });
+
   it("parses output format", () => {
     const args = parseArgs(["--output-format", "stream-json"]) as Args;
     expect(args.outputFormat).toBe("stream-json");
@@ -558,6 +572,7 @@ describe("parseArgs", () => {
     expect(args.inputFormat).toBe("text");
     expect(args.verbose).toBe(false);
     expect(args.includePartial).toBe(false);
+    expect(args.readPromptFromStdin).toBe(false);
   });
 });
 
@@ -694,7 +709,7 @@ describe("StdinReader", () => {
   it("text mode emits prompt and EOF", async () => {
     const input = new PassThrough();
     const events: string[] = [];
-    const reader = new StdinReader(input, { inputFormat: "text", prompt: null }, {
+    const reader = new StdinReader(input, { inputFormat: "text", prompt: null, readPromptFromStdin: false }, {
       onUserMessage: (content) => events.push(`user:${content}`),
       onControlRequest: () => {},
       onControlResponse: () => {},
@@ -712,7 +727,7 @@ describe("StdinReader", () => {
   it("text mode emits EOF for empty stdin", async () => {
     const input = new PassThrough();
     const events: string[] = [];
-    const reader = new StdinReader(input, { inputFormat: "text", prompt: null }, {
+    const reader = new StdinReader(input, { inputFormat: "text", prompt: null, readPromptFromStdin: false }, {
       onUserMessage: (content) => events.push(`user:${content}`),
       onControlRequest: () => {},
       onControlResponse: () => {},
@@ -727,10 +742,46 @@ describe("StdinReader", () => {
     expect(events).toEqual(["eof"]);
   });
 
+  it("text mode reads stdin when dash sentinel is set", async () => {
+    const input = new PassThrough();
+    const events: string[] = [];
+    const reader = new StdinReader(input, { inputFormat: "text", prompt: null, readPromptFromStdin: true }, {
+      onUserMessage: (content) => events.push(`user:${content}`),
+      onControlRequest: () => {},
+      onControlResponse: () => {},
+      onKeepAlive: () => {},
+      onEof: () => events.push("eof"),
+    });
+
+    reader.start();
+    input.end("hello from dash\n");
+    await new Promise(resolve => setImmediate(resolve));
+
+    expect(events).toEqual(["user:hello from dash", "eof"]);
+  });
+
+  it("text mode ignores stdin when an explicit prompt is present", async () => {
+    const input = new PassThrough();
+    const events: string[] = [];
+    const reader = new StdinReader(input, { inputFormat: "text", prompt: "hello", readPromptFromStdin: false }, {
+      onUserMessage: (content) => events.push(`user:${content}`),
+      onControlRequest: () => {},
+      onControlResponse: () => {},
+      onKeepAlive: () => {},
+      onEof: () => events.push("eof"),
+    });
+
+    reader.start();
+    input.end("ignored\n");
+    await new Promise(resolve => setImmediate(resolve));
+
+    expect(events).toEqual([]);
+  });
+
   it("stream-json mode rejects oversized lines", async () => {
     const input = new PassThrough();
     const events: string[] = [];
-    const reader = new StdinReader(input, { inputFormat: "stream-json", prompt: null }, {
+    const reader = new StdinReader(input, { inputFormat: "stream-json", prompt: null, readPromptFromStdin: false }, {
       onUserMessage: (content) => events.push(`user:${content}`),
       onControlRequest: () => {},
       onControlResponse: () => {},
@@ -750,7 +801,7 @@ describe("StdinReader", () => {
   it("stream-json mode parses trailing line on EOF", async () => {
     const input = new PassThrough();
     const events: string[] = [];
-    const reader = new StdinReader(input, { inputFormat: "stream-json", prompt: null }, {
+    const reader = new StdinReader(input, { inputFormat: "stream-json", prompt: null, readPromptFromStdin: false }, {
       onUserMessage: (content) => events.push(`user:${content}`),
       onControlRequest: () => {},
       onControlResponse: () => {},

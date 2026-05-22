@@ -27,7 +27,7 @@ async function main(): Promise<void> {
   if (!args) process.exit(0);
 
   // No prompt and stdin is a TTY — nothing to do, show help
-  if (!args.prompt && args.inputFormat === "text" && process.stdin.isTTY) {
+  if (!args.prompt && !args.readPromptFromStdin && args.inputFormat === "text" && process.stdin.isTTY) {
     parseArgs(["--help"]);
     process.exit(0);
   }
