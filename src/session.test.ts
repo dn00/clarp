@@ -45,6 +45,7 @@ const defaultArgs: Args = {
   maxTurns: null,
   maxBudgetUsd: null,
   prompt: null,
+  readPromptFromStdin: false,
   claudeArgs: [],
   cwd: "/tmp",
 };
@@ -215,6 +216,7 @@ function createTestController(overrides?: {
     maxTurns: null,
     maxBudgetUsd: null,
     prompt: "hello",
+    readPromptFromStdin: false,
     claudeArgs: [],
     cwd: "/tmp",
     ...overrides?.args,

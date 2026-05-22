@@ -18,7 +18,7 @@ export type StdinReaderCallbacks = {
 export class StdinReader {
   constructor(
     private input: NodeJS.ReadableStream,
-    private args: Pick<Args, "inputFormat" | "prompt">,
+    private args: Pick<Args, "inputFormat" | "prompt" | "readPromptFromStdin">,
     private callbacks: StdinReaderCallbacks,
     private log: (msg: string) => void = () => {},
   ) {}
@@ -29,7 +29,7 @@ export class StdinReader {
   start(): void {
     if (this.args.inputFormat === "stream-json") {
       this.startStreamJsonMode();
-    } else if (!this.args.prompt) {
+    } else if (!this.args.prompt || this.args.readPromptFromStdin) {
       this.startTextPromptMode();
     }
   }
