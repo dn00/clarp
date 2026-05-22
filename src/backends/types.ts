@@ -26,7 +26,7 @@ export interface ObservationBackend {
   readonly capabilities: BackendCapabilities;
   prepare(): Promise<void>;
   getClaudeEnv(): Record<string, string>;
-  startObserving(opts: { transcriptPath?: string }): Promise<void>;
+  startObserving(): Promise<void>;
   stop(): Promise<void>;
   onObservation(cb: (obs: Observation) => void): void;
 }
