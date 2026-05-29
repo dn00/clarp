@@ -1152,6 +1152,26 @@ describe("handleStdinEof", () => {
     vi.advanceTimersByTime(100);
     expect(ptyHandle.kills).toHaveLength(0);
   });
+
+  it("times out instead of hanging when queued prompt never becomes ready", async () => {
+    const { controller, ptyHandle, exitCodes } = createTestController({ args: { inputFormat: "stream-json" } });
+    const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    await controller.start();
+
+    controller.enqueuePrompt("pending");
+    controller.handleStdinEof();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    await vi.advanceTimersByTimeAsync(30_000);
+
+    expect(stderr.mock.calls.map(c => String(c[0])).join("")).toContain("Timed out after 30s waiting for Claude");
+    expect(ptyHandle.kills).toContain("SIGTERM");
+
+    controller.handleClaudeExit(143);
+    await Promise.resolve();
+    expect(exitCodes).toEqual([1]);
+  });
 });
 
 // ---- Interrupt (SIGINT) ----
