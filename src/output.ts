@@ -143,6 +143,21 @@ export function emitUserReplay(content: string): void {
 }
 
 /**
+ * Emits the synthetic user event native claude -p writes when a turn is
+ * interrupted through stream-json control.
+ */
+export function emitInterruptedUserMessage(): void {
+  if (format !== "stream-json") return;
+  writeLine({
+    type: "user",
+    message: { role: "user", content: [{ type: "text", text: "[Request interrupted by user]" }] },
+    parent_tool_use_id: null,
+    session_id: sessionId,
+    timestamp: new Date().toISOString(),
+  });
+}
+
+/**
  * Emits Claude's current busy/idle/waiting status as a system event.
  */
 export function emitStatus(status: string, waitingFor?: string): void {
@@ -270,6 +285,19 @@ export function emitControlRequest(requestId: string, toolName: string, toolUseI
 }
 
 /**
+ * Emits the immediate success acknowledgement native claude -p writes for
+ * accepted control requests such as interrupt.
+ */
+export function emitControlResponseSuccess(requestId?: string): void {
+  if (format !== "stream-json") return;
+  writeLine({
+    type: "control_response",
+    ...(requestId ? { request_id: requestId } : {}),
+    response: { subtype: "success" },
+  });
+}
+
+/**
  * Emits a post-turn summary when Claude did not provide one directly.
  */
 export function emitPostTurnSummary(opts: {
@@ -303,15 +331,29 @@ export function emitPostTurnSummary(opts: {
 /**
  * Emits the final result for a turn or process exit.
  */
-export function emitResult(subtype: "success" | "error", result: string, meta?: { costUsd?: number; durationMs?: number; numTurns?: number; stopReason?: string; apiErrorStatus?: number }): void {
+export function emitResult(
+  subtype: "success" | "error" | "error_during_execution",
+  result: string,
+  meta?: {
+    costUsd?: number;
+    durationMs?: number;
+    numTurns?: number;
+    stopReason?: string | null;
+    apiErrorStatus?: number;
+    terminalReason?: string;
+    errors?: string[];
+  },
+): void {
   const msg: Record<string, unknown> = {
     type: "result", subtype, result, is_error: subtype !== "success",
     session_id: sessionId,
     ...(meta?.costUsd != null ? { cost_usd: meta.costUsd } : {}),
     ...(meta?.durationMs != null ? { duration_ms: meta.durationMs } : {}),
     ...(meta?.numTurns != null ? { num_turns: meta.numTurns } : {}),
-    ...(meta?.stopReason ? { stop_reason: meta.stopReason } : {}),
+    ...(meta && "stopReason" in meta ? { stop_reason: meta.stopReason ?? null } : {}),
     ...(meta?.apiErrorStatus != null ? { api_error_status: meta.apiErrorStatus } : {}),
+    ...(meta?.terminalReason ? { terminal_reason: meta.terminalReason } : {}),
+    ...(meta?.errors ? { errors: meta.errors } : {}),
   };
   if (format === "text") {
     process.stdout.write(result.endsWith("\n") ? result : result + "\n");
