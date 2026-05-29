@@ -1,6 +1,9 @@
 import * as nodePty from "node-pty";
 import * as os from "node:os";
 import { execSync } from "node:child_process";
+import { createRequire } from "node:module";
+import * as fs from "node:fs";
+import * as path from "node:path";
 
 export type PtyCallbacks = {
   onData: (data: string) => void;
@@ -20,10 +23,43 @@ export type PtyHandle = {
 
 const BRACKETED_PASTE_OPEN = "\x1b[200~";
 const BRACKETED_PASTE_CLOSE = "\x1b[201~";
+const require = createRequire(import.meta.url);
 
 export function normalizePtyKillSignal(signal: string | undefined, platform = os.platform()): string | undefined {
   // node-pty's Windows backend throws on POSIX signal args; no-arg kill is its force-kill path.
   return platform === "win32" ? undefined : signal;
+}
+
+export function getNodePtySpawnHelperPath(
+  platform = os.platform(),
+  arch = os.arch(),
+  nodePtyRoot = path.dirname(require.resolve("node-pty/package.json")),
+): string | null {
+  if (platform !== "darwin") return null;
+  if (arch !== "arm64" && arch !== "x64") return null;
+  return path.join(nodePtyRoot, "prebuilds", `darwin-${arch}`, "spawn-helper");
+}
+
+export function ensureNodePtySpawnHelperExecutable(helperPath = getNodePtySpawnHelperPath()): void {
+  if (helperPath === null) return;
+
+  let stat: fs.Stats;
+  try {
+    stat = fs.statSync(helperPath);
+  } catch {
+    return;
+  }
+
+  if ((stat.mode & 0o111) !== 0) return;
+
+  try {
+    fs.chmodSync(helperPath, stat.mode | 0o755);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    throw new Error(
+      `node-pty spawn-helper is not executable and clarp could not repair it: ${helperPath}. ${message}`
+    );
+  }
 }
 
 function findClaude(): string {
@@ -55,6 +91,8 @@ export function spawnClaude(
   cwd: string,
   callbacks: PtyCallbacks,
 ): PtyHandle {
+  ensureNodePtySpawnHelperExecutable();
+
   const claudePath = findClaude();
   const mergedEnv: Record<string, string> = {};
   for (const [k, v] of Object.entries(process.env)) {

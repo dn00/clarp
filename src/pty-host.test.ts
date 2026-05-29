@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
+  ensureNodePtySpawnHelperExecutable,
+  getNodePtySpawnHelperPath,
   normalizePtyKillSignal,
   sendPrompt,
   sendInterrupt,
@@ -8,6 +10,11 @@ import {
   sendSlashCommand,
   type PtyHandle,
 } from "./pty-host.js";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
+
+const itIfPosix = process.platform === "win32" ? it.skip : it;
 
 function mockHandle(): { handle: PtyHandle; writes: string[] } {
   const writes: string[] = [];
@@ -99,5 +106,36 @@ describe("normalizePtyKillSignal", () => {
 
   it("preserves undefined signals", () => {
     expect(normalizePtyKillSignal(undefined, "linux")).toBeUndefined();
+  });
+});
+
+describe("node-pty spawn-helper repair", () => {
+  it("returns the macOS helper path for supported architectures", () => {
+    expect(getNodePtySpawnHelperPath("darwin", "arm64", "/tmp/node-pty")).toBe(
+      path.join("/tmp/node-pty", "prebuilds", "darwin-arm64", "spawn-helper"),
+    );
+    expect(getNodePtySpawnHelperPath("darwin", "x64", "/tmp/node-pty")).toBe(
+      path.join("/tmp/node-pty", "prebuilds", "darwin-x64", "spawn-helper"),
+    );
+  });
+
+  it("skips non-macOS helper paths", () => {
+    expect(getNodePtySpawnHelperPath("linux", "arm64", "/tmp/node-pty")).toBeNull();
+    expect(getNodePtySpawnHelperPath("darwin", "ia32", "/tmp/node-pty")).toBeNull();
+  });
+
+  itIfPosix("chmods a non-executable helper", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "clarp-pty-"));
+    const helperPath = path.join(dir, "spawn-helper");
+    try {
+      fs.writeFileSync(helperPath, "");
+      fs.chmodSync(helperPath, 0o644);
+
+      ensureNodePtySpawnHelperExecutable(helperPath);
+
+      expect(fs.statSync(helperPath).mode & 0o111).not.toBe(0);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

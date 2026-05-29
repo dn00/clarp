@@ -140,7 +140,7 @@ npm install -g clarp-cli
 
 **Platform notes:**
 - macOS, Linux, Windows (via WSL or native) supported
-- If you see `posix_spawnp failed`, reinstall under Node.js 20-24 first. On macOS, `node-pty`'s packaged `spawn-helper` may also lose its executable bit during install:
+- If you see `posix_spawnp failed`, reinstall under Node.js 20-24 first. Clarp repairs `node-pty`'s macOS `spawn-helper` executable bit during install and before launch. If npm lifecycle scripts were disabled and the runtime repair also fails, you can repair the installed helper manually:
 
 ```bash
 chmod +x "$(npm root -g)/clarp-cli/node_modules/node-pty/prebuilds/darwin-arm64/spawn-helper"
