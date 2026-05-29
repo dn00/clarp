@@ -1,6 +1,6 @@
 {
   "name": "clarp-cli",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "Drop-in replacement for claude -p. Uses your Claude Code subscription instead of metered API pricing.",
   "type": "module",
   "author": "dn00",
@@ -30,7 +30,8 @@
     "probe:pty-interrupt": "node scripts/pty-interrupt-probe.mjs",
     "start": "node dist/cli.js",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "postinstall": "node scripts/repair-node-pty-spawn-helper.mjs"
   },
   "dependencies": {
     "node-pty": "^1.0.0"
