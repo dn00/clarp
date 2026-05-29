@@ -342,11 +342,14 @@ Clients should treat unknown non-assistant events as optional metadata. In curre
 npm test
 npm run test:watch
 npm run parity:stream
+npm run parity:interrupt
 ```
 
 Tests cover SSE parsing, message assembly, output formatting, PID file watching, session lifecycle, permission forwarding, and protocol parity against captured `claude -p` output. Includes schema validation for all 25 SDK output types and all 21 control request subtypes.
 
 `npm run parity:stream` builds clarp, runs a 20-prompt stream-json session through native `claude -p` and clarp, writes JSONL/debug artifacts under `.parity-runs/`, and reports public stream differences. Use `-- --prompts prompts.txt --limit 20 --model sonnet` to run a custom prompt list. Use `-- --extra-args "--permission-mode plan"` for one flag variant, or `-- --cases cases.json` for a matrix of `{ "name": "...", "args": ["--flag", "value"], "prompts": ["..."] }` cases.
+
+`npm run parity:interrupt` runs scripted interrupt parity cases covering immediate follow-up prompts, zero-delay prompt dispatch, SIGINT, duplicate interrupts, and queued prompts after interruption.
 
 When changing output behavior, run the parity harness in both modes:
 
@@ -365,9 +368,9 @@ The first command should not emit `stream_event` deltas. The second should emit 
 src/
 ├── cli.ts                    # Entry point: wire components, start
 ├── args.ts                   # CLI arg parsing + help text
-├── session.ts                # Turn state machine, prompt queue, readiness gate
+├── session.ts                # Turn/control state machine and operation runner
 ├── stdin-reader.ts           # Parse stdin (text or stream-json)
-├── prompt-queue.ts           # Async prompt queue with idle-wait
+├── session-op-queue.ts       # Priority queue for prompts and controls
 ├── output.ts                 # Emit stream-json / text / json on stdout
 ├── message-assembler.ts      # Accumulate SSE events → complete assistant messages
 ├── message-request-filter.ts # Keep internal Claude API calls out of public output

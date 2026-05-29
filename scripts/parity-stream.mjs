@@ -65,10 +65,16 @@ async function loadCases(defaultPrompts) {
     }
     const name = typeof item.name === "string" && item.name ? item.name : `case-${index + 1}`;
     const args = item.args === undefined ? [] : item.args;
-    const prompts = item.prompts === undefined ? defaultPrompts : item.prompts;
     if (!Array.isArray(args) || !args.every(arg => typeof arg === "string")) {
       throw new Error(`case ${name} args must be a string array`);
     }
+
+    if (item.sequence) {
+      if (!Array.isArray(item.sequence)) throw new Error(`case ${name} sequence must be an array`);
+      return { name, args, sequence: item.sequence };
+    }
+
+    const prompts = item.prompts === undefined ? defaultPrompts : item.prompts;
     if (!Array.isArray(prompts) || !prompts.every(prompt => typeof prompt === "string")) {
       throw new Error(`case ${name} prompts must be a string array`);
     }
@@ -85,16 +91,42 @@ function safeName(name) {
   return name.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "case";
 }
 
-async function runSession({ name, command, args, prompts, outDir, env = {} }) {
+function writeUserMessage(stdin, content) {
+  stdin.write(JSON.stringify({
+    type: "user",
+    message: { role: "user", content },
+    parent_tool_use_id: null,
+  }) + "\n");
+}
+
+function writeControlRequest(stdin, subtype) {
+  stdin.write(JSON.stringify({
+    type: "control_request",
+    request: { subtype },
+  }) + "\n");
+}
+
+function delay(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function runSession({ name, command, args, prompts, sequence, outDir, env = {} }) {
   if (!command) throw new Error(`Missing command for ${name}`);
   const stdoutPath = resolve(outDir, `${name}.stdout.jsonl`);
   const stderrPath = resolve(outDir, `${name}.stderr.log`);
+  const timelinePath = resolve(outDir, `${name}.timeline.jsonl`);
   const parsed = [];
+  const timeline = [];
   const stderr = [];
   let stdout = "";
   let sent = 0;
   let results = 0;
   let settled = false;
+  const startedAt = Date.now();
+
+  const recordTimeline = (action, detail = {}) => {
+    timeline.push({ t: Date.now() - startedAt, action, ...detail });
+  };
 
   const child = spawn(command, args, {
     cwd: root,
@@ -102,22 +134,28 @@ async function runSession({ name, command, args, prompts, outDir, env = {} }) {
     stdio: ["pipe", "pipe", "pipe"],
   });
   child.stdin.on("error", () => {});
+  const exitPromise = new Promise(resolveExit => {
+    child.on("exit", (code, signal) => resolveExit({ code, signal }));
+  });
 
-  const sendPrompt = () => {
-    if (sent >= prompts.length) {
-      child.stdin.end();
+  const isSequenceMode = Array.isArray(sequence);
+
+  const sendNextPrompt = () => {
+    if (isSequenceMode || sent >= prompts.length) {
+      if (!isSequenceMode) child.stdin.end();
       return;
     }
-    child.stdin.write(JSON.stringify({
-      type: "user",
-      message: { role: "user", content: prompts[sent++] },
-      parent_tool_use_id: null,
-    }) + "\n");
+    const content = prompts[sent++];
+    recordTimeline("send_prompt", { index: sent - 1, content });
+    writeUserMessage(child.stdin, content);
   };
 
   const timeoutMs = Number(argValue("--timeout-ms", "180000"));
   const timer = setTimeout(() => {
-    if (!settled) child.kill("SIGTERM");
+    if (!settled) {
+      recordTimeline("timeout_kill");
+      child.kill("SIGTERM");
+    }
   }, timeoutMs);
 
   child.stdout.setEncoding("utf8");
@@ -131,9 +169,11 @@ async function runSession({ name, command, args, prompts, outDir, env = {} }) {
         try {
           const obj = JSON.parse(line);
           parsed.push(obj);
+          recordTimeline("event", { type: obj.type, subtype: obj.subtype });
           if (obj.type === "result") {
             results++;
-            sendPrompt();
+            recordTimeline("result", { subtype: obj.subtype, exit_code: obj.exit_code });
+            if (!isSequenceMode) sendNextPrompt();
           }
         } catch {
           parsed.push({ type: "non_json_stdout", line });
@@ -146,18 +186,64 @@ async function runSession({ name, command, args, prompts, outDir, env = {} }) {
   child.stderr.setEncoding("utf8");
   child.stderr.on("data", chunk => stderr.push(chunk));
 
-  sendPrompt();
+  if (isSequenceMode) {
+    recordTimeline("sequence_start", { steps: sequence.length });
+    try {
+      for (const step of sequence) {
+        if (settled) break;
+        if (step.delayMs) {
+          recordTimeline("delay_start", { ms: step.delayMs });
+          await delay(step.delayMs);
+          recordTimeline("delay_end");
+        }
+        if (step.type === "user") {
+          sent++;
+          recordTimeline("send_prompt", { index: sent - 1, content: step.content });
+          writeUserMessage(child.stdin, step.content);
+        } else if (step.type === "control_request") {
+          recordTimeline("send_control", { subtype: step.subtype });
+          writeControlRequest(child.stdin, step.subtype);
+        } else if (step.type === "signal") {
+          recordTimeline("send_signal", { signal: step.signal });
+          child.kill(step.signal);
+        } else if (step.type === "wait_result") {
+          recordTimeline("wait_result_start");
+          const waitMs = step.timeoutMs ?? 30_000;
+          await new Promise((resolve) => {
+            const resultCount = results;
+            const check = () => {
+              if (results > resultCount || settled) { clearInterval(interval); resolve(); }
+            };
+            const interval = setInterval(check, 50);
+            setTimeout(() => { clearInterval(interval); resolve(); }, waitMs);
+            check();
+          });
+          recordTimeline("wait_result_end", { results });
+        } else if (step.type === "close_stdin") {
+          recordTimeline("close_stdin");
+          child.stdin.end();
+        }
+      }
+    } finally {
+      if (!settled) {
+        recordTimeline("sequence_done_closing_stdin");
+        child.stdin.end();
+      }
+    }
+  } else {
+    sendNextPrompt();
+  }
 
-  const exit = await new Promise(resolveExit => {
-    child.on("exit", (code, signal) => resolveExit({ code, signal }));
-  });
+  const exit = await exitPromise;
   settled = true;
   clearTimeout(timer);
+  recordTimeline("exit", exit);
 
   await writeFile(stdoutPath, parsed.map(obj => JSON.stringify(obj)).join("\n") + (parsed.length ? "\n" : ""));
   await writeFile(stderrPath, stderr.join(""));
+  await writeFile(timelinePath, timeline.map(obj => JSON.stringify(obj)).join("\n") + (timeline.length ? "\n" : ""));
 
-  return { name, exit, sent, results, stdoutPath, stderrPath, events: parsed };
+  return { name, exit, sent, results, stdoutPath, stderrPath, events: parsed, timeline };
 }
 
 function assistantText(event) {
@@ -245,31 +331,43 @@ async function main() {
     const caseDir = cases.length === 1 ? outDir : resolve(outDir, safeName(testCase.name));
     await mkdir(caseDir, { recursive: true });
     const args = [...commonArgs, ...testCase.args];
+    const sessionOpts = testCase.sequence
+      ? { sequence: testCase.sequence }
+      : { prompts: testCase.prompts };
     const runs = [];
     if (!hasArg("--clarp-only")) {
       runs.push(await runSession({
         name: "native",
         command: nativeCmd[0],
         args: [...nativeCmd.slice(1), ...args],
-        prompts: testCase.prompts,
+        ...sessionOpts,
         outDir: caseDir,
       }));
     }
-    runs.push(await runSession({
-      name: "clarp",
-      command: clarpCmd[0],
-      args: [...clarpCmd.slice(1), ...args],
-      prompts: testCase.prompts,
-      outDir: caseDir,
-      env: { CLARP_DEBUG_API: "1" },
-    }));
+    if (!hasArg("--native-only")) {
+      runs.push(await runSession({
+        name: "clarp",
+        command: clarpCmd[0],
+        args: [...clarpCmd.slice(1), ...args],
+        ...sessionOpts,
+        outDir: caseDir,
+        env: { CLARP_DEBUG_API: "1" },
+      }));
+    }
 
+    const promptsSent = testCase.sequence
+      ? testCase.sequence.filter(s => s.type === "user").length
+      : testCase.prompts.length;
     const caseReport = {
       args: testCase.args,
-      prompts_sent: testCase.prompts.length,
+      prompts_sent: promptsSent,
+      mode: testCase.sequence ? "sequence" : "prompts",
       out_dir: caseDir,
       runs: Object.fromEntries(runs.map(run => [run.name, summarize(run)])),
     };
+    if (runs.length > 0 && runs[0].timeline) {
+      caseReport.timelines = Object.fromEntries(runs.map(run => [run.name, run.timeline ?? []]));
+    }
     if (caseReport.runs.native && caseReport.runs.clarp) {
       caseReport.diff = diffSummaries(caseReport.runs.native, caseReport.runs.clarp);
     }
