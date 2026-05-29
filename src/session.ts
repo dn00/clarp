@@ -426,7 +426,7 @@ export class SessionController {
   }
 
   private waitForSessionOpChange(): Promise<void> {
-    if (this.opQueue.normalLength === 0 || this.isReadyForPrompt()) {
+    if (!this.shouldArmReadinessTimer()) {
       this.clearReadinessTimer();
       return this.opQueue.waitForChange();
     }
@@ -434,12 +434,7 @@ export class SessionController {
     if (!this.readinessTimer) {
       this.readinessTimer = setTimeout(() => {
         this.readinessTimer = null;
-        if (
-          this.processExited ||
-          this.shuttingDown ||
-          this.opQueue.normalLength === 0 ||
-          this.isReadyForPrompt()
-        ) return;
+        if (!this.shouldArmReadinessTimer()) return;
         const err = new Error(
           `Timed out after ${READY_TIMEOUT_MS / 1000}s waiting for Claude to become ready. ` +
           `Claude may be showing a startup, trust, or permission prompt, or Clarp may be unable to observe Claude's PID status. ` +
@@ -453,6 +448,19 @@ export class SessionController {
     }
 
     return this.opQueue.waitForChange();
+  }
+
+  private shouldArmReadinessTimer(): boolean {
+    const blockedOnPermission = this.waitingForAction || this.pendingPermissionRequestId !== null;
+    return (
+      this.opQueue.normalLength > 0 &&
+      !this.isReadyForPrompt() &&
+      !this.promptDispatchInFlight &&
+      this.interruptInFlight === null &&
+      !this.processExited &&
+      !this.shuttingDown &&
+      (!this.turnActive || blockedOnPermission)
+    );
   }
 
   private processNextSessionOp(): boolean {
