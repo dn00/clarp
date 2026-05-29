@@ -345,11 +345,16 @@ describe("max turns enforcement", () => {
 
   afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
 
-  it("sends interrupt when turnCount exceeds maxTurns", () => {
-    const { fireStatus, ptyHandle } = createTestController({ args: { maxTurns: 1 } });
+  it("sends interrupt when turnCount exceeds maxTurns", async () => {
+    const { controller, fireStatus, ptyHandle } = createTestController({
+      args: { inputFormat: "stream-json", maxTurns: 1 },
+    });
+    await controller.start();
     fireStatus("busy");
     fireStatus("idle");
     fireStatus("busy");
+    await Promise.resolve();
+    await Promise.resolve();
 
     expect(ptyHandle.writes).toContain("\x1b");
   });
@@ -426,17 +431,23 @@ describe("handleControlRequest", () => {
     expect(ptyHandle.writes).not.toContain("\x1b");
   });
 
-  it("interrupt still sends ESC while a turn is active", () => {
+  it("interrupt still sends ESC while a turn is active", async () => {
     const { controller, fireStatus, ptyHandle } = createTestController();
+    await controller.start();
     fireStatus("busy");
     controller.handleControlRequest({ subtype: "interrupt" });
+    await Promise.resolve();
+    await Promise.resolve();
     expect(ptyHandle.writes).toContain("\x1b");
   });
 
-  it("interrupt still sends ESC while Claude is waiting for action", () => {
+  it("interrupt still sends ESC while Claude is waiting for action", async () => {
     const { controller, fireStatus, ptyHandle } = createTestController();
+    await controller.start();
     fireStatus("waiting", "permission");
     controller.handleControlRequest({ subtype: "interrupt" });
+    await Promise.resolve();
+    await Promise.resolve();
     expect(ptyHandle.writes).toContain("\x1b");
   });
 
@@ -453,17 +464,48 @@ describe("handleControlRequest", () => {
     expect(ptyHandle.writes).not.toContain("\x1b");
   });
 
-  it("stop_task still sends ESC while a turn is active", () => {
+  it("stop_task still sends ESC while a turn is active", async () => {
     const { controller, fireStatus, ptyHandle } = createTestController();
+    await controller.start();
     fireStatus("busy");
     controller.handleControlRequest({ subtype: "stop_task" });
+    await Promise.resolve();
+    await Promise.resolve();
     expect(ptyHandle.writes).toContain("\x1b");
   });
 
-  it("set_model sends slash command to PTY", () => {
-    const { controller, ptyHandle } = createTestController();
+  it("set_model sends slash command to PTY when ready", async () => {
+    const { controller, fireStatus, ptyHandle } = createTestController();
+    await controller.start();
+    fireStatus("idle");
     controller.handleControlRequest({ subtype: "set_model", model: "claude-sonnet-4-6" });
+    await Promise.resolve();
+    await Promise.resolve();
     expect(ptyHandle.writes).toContain("/model claude-sonnet-4-6\r");
+  });
+
+  it("set_model waits for idle and does not block interrupt", async () => {
+    const { controller, fireStatus, ptyHandle } = createTestController({
+      args: { inputFormat: "stream-json" },
+    });
+    await controller.start();
+
+    fireStatus("busy");
+    controller.handleControlRequest({ subtype: "set_model", model: "claude-sonnet-4-6" });
+    controller.handleControlRequest({ subtype: "interrupt" }, "int-before-model");
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const escIndex = ptyHandle.writes.findIndex(w => w === "\x1b");
+    const slashIndex = ptyHandle.writes.findIndex(w => w === "/model claude-sonnet-4-6\r");
+    expect(escIndex).toBeGreaterThan(-1);
+    expect(slashIndex).toBe(-1);
+
+    fireStatus("idle");
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(ptyHandle.writes.findIndex(w => w === "/model claude-sonnet-4-6\r")).toBeGreaterThan(escIndex);
   });
 
   it("get_context_usage emits control_response on stdout", () => {
@@ -481,6 +523,226 @@ describe("handleControlRequest", () => {
     controller.handleClaudeExit(0);
     controller.handleControlRequest({ subtype: "interrupt" });
     expect(ptyHandle.writes.filter(w => w === "\x1b")).toHaveLength(0);
+  });
+});
+
+describe("interrupt transaction", () => {
+  beforeEach(() => {
+    written = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk: any) => {
+      written.push(typeof chunk === "string" ? chunk : chunk.toString());
+      return true;
+    });
+    output.configureOutput({ format: "stream-json", verbose: true, includePartial: true });
+    output.resetOutputState();
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it("does not dispatch a queued prompt until interrupt is acknowledged idle", async () => {
+    const { controller, fireStatus, ptyHandle } = createTestController({
+      args: { inputFormat: "stream-json" },
+    });
+    await controller.start();
+
+    fireStatus("busy");
+    controller.handleControlRequest({ subtype: "interrupt" });
+    controller.enqueuePrompt("next prompt");
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(ptyHandle.writes).toContain("\x1b");
+    expect(ptyHandle.writes.join("")).not.toContain("next prompt");
+
+    fireStatus("idle");
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const interrupted = parsedLines().find(l => l.type === "result");
+    expect(interrupted).toMatchObject({
+      subtype: "error_during_execution",
+      terminal_reason: "aborted_streaming",
+      is_error: true,
+    });
+    expect(ptyHandle.writes.join("")).toContain("next prompt");
+  });
+
+  it("emits control_response success when accepting interrupt", async () => {
+    const { controller, fireStatus } = createTestController({
+      args: { inputFormat: "stream-json" },
+    });
+    await controller.start();
+
+    fireStatus("busy");
+    controller.handleControlRequest({ subtype: "interrupt" }, "int-123");
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const response = parsedLines().find(l => l.type === "control_response");
+    expect(response).toMatchObject({
+      request_id: "int-123",
+      response: { subtype: "success" },
+    });
+  });
+
+  it("accepts interrupt while a prompt is dispatched before busy status", async () => {
+    const { controller, fireStatus, ptyHandle } = createTestController({
+      args: { inputFormat: "stream-json" },
+    });
+    await controller.start();
+
+    fireStatus("idle");
+    controller.enqueuePrompt("slow prompt");
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(ptyHandle.writes.join("")).toContain("slow prompt");
+    controller.handleControlRequest({ subtype: "interrupt" }, "int-dispatch");
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(ptyHandle.writes).not.toContain("\x1b");
+    expect(parsedLines().find(l => l.type === "control_response")).toMatchObject({
+      request_id: "int-dispatch",
+      response: { subtype: "success" },
+    });
+
+    fireStatus("busy");
+    expect(ptyHandle.writes).toContain("\x1b");
+    fireStatus("idle");
+
+    const result = parsedLines().find(l => l.type === "result");
+    expect(result).toMatchObject({
+      subtype: "error_during_execution",
+      terminal_reason: "aborted_streaming",
+    });
+  });
+
+  it("queues prompt after dispatch interrupt until ESC is sent and idle acknowledges it", async () => {
+    const { controller, fireStatus, ptyHandle } = createTestController({
+      args: { inputFormat: "stream-json" },
+    });
+    await controller.start();
+
+    fireStatus("idle");
+    controller.enqueuePrompt("slow prompt");
+    await Promise.resolve();
+    await Promise.resolve();
+
+    controller.handleControlRequest({ subtype: "interrupt" }, "int-dispatch");
+    controller.enqueuePrompt("next prompt");
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(ptyHandle.writes.join("")).not.toContain("next prompt");
+    expect(ptyHandle.writes).not.toContain("\x1b");
+
+    fireStatus("busy");
+    expect(ptyHandle.writes).toContain("\x1b");
+    expect(ptyHandle.writes.join("")).not.toContain("next prompt");
+
+    fireStatus("idle");
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(parsedLines().find(l => l.type === "result")).toMatchObject({
+      subtype: "error_during_execution",
+      terminal_reason: "aborted_streaming",
+    });
+    expect(ptyHandle.writes.join("")).toContain("[Request interrupted by user]\n\nnext prompt");
+  });
+
+  it("accepts duplicate interrupts while a queued prompt is waiting for first dispatch", async () => {
+    const { controller, fireStatus, ptyHandle } = createTestController({
+      args: { inputFormat: "stream-json" },
+    });
+    await controller.start();
+
+    controller.enqueuePrompt("pending prompt");
+    controller.handleControlRequest({ subtype: "interrupt" }, "int-one");
+    controller.handleControlRequest({ subtype: "interrupt" }, "int-two");
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const responses = parsedLines().filter(l => l.type === "control_response");
+    expect(responses).toHaveLength(2);
+    expect(ptyHandle.writes).not.toContain("\x1b");
+
+    fireStatus("idle");
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(ptyHandle.writes.join("")).toContain("pending prompt");
+
+    fireStatus("busy");
+    expect(ptyHandle.writes).toContain("\x1b");
+  });
+
+  it("prioritizes interrupt over queued prompt backlog", async () => {
+    const { controller, fireStatus, ptyHandle } = createTestController({
+      args: { inputFormat: "stream-json" },
+    });
+    await controller.start();
+
+    fireStatus("idle");
+    controller.enqueuePrompt("active prompt");
+    await Promise.resolve();
+    await Promise.resolve();
+    fireStatus("busy");
+
+    for (let i = 0; i < 25; i++) {
+      controller.enqueuePrompt(`queued prompt ${i}`);
+    }
+    controller.handleControlRequest({ subtype: "interrupt" }, "int-backlog");
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const escIndex = ptyHandle.writes.findIndex(w => w === "\x1b");
+    expect(escIndex).toBeGreaterThan(-1);
+    expect(ptyHandle.writes.slice(0, escIndex).join("")).not.toContain("queued prompt");
+  });
+
+  it("cancels interrupt escalation when Claude acknowledges idle", async () => {
+    const { controller, fireStatus, ptyHandle } = createTestController({
+      args: { inputFormat: "stream-json" },
+    });
+    await controller.start();
+
+    fireStatus("busy");
+    controller.handleControlRequest({ subtype: "interrupt" });
+    await Promise.resolve();
+    await Promise.resolve();
+    fireStatus("idle");
+    vi.advanceTimersByTime(5000);
+
+    expect(ptyHandle.writes).toContain("\x1b");
+    expect(ptyHandle.writes).not.toContain("\x03");
+    expect(ptyHandle.kills).toHaveLength(0);
+  });
+
+  it("escalates interrupt when Claude does not acknowledge idle", async () => {
+    const { controller, fireStatus, ptyHandle } = createTestController({
+      args: { inputFormat: "stream-json" },
+    });
+    await controller.start();
+
+    fireStatus("busy");
+    controller.handleControlRequest({ subtype: "interrupt" });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    vi.advanceTimersByTime(1000);
+    expect(ptyHandle.writes).toContain("\x03");
+    expect(ptyHandle.kills).toHaveLength(0);
+
+    vi.advanceTimersByTime(1500);
+    expect(ptyHandle.kills).toContain("SIGINT");
+
+    vi.advanceTimersByTime(2000);
+    expect(ptyHandle.kills).toContain("SIGTERM");
   });
 });
 
@@ -522,23 +784,29 @@ describe("permission forwarding", () => {
     expect(req.request.input).toEqual({ command: "ls" });
   });
 
-  it("allow response sends CR to PTY", () => {
+  it("allow response sends CR to PTY", async () => {
     const { controller, fireStatus, ptyHandle } = createTestController();
+    await controller.start();
     simulateToolUse();
     fireStatus("waiting", "approve Bash");
 
     const req = parsedLines().find(l => l.type === "control_request");
     controller.handleControlResponse({ behavior: "allow" }, req.request_id);
+    await Promise.resolve();
+    await Promise.resolve();
     expect(ptyHandle.writes).toContain("\r");
   });
 
-  it("deny response sends ESC to PTY", () => {
+  it("deny response sends ESC to PTY", async () => {
     const { controller, fireStatus, ptyHandle } = createTestController();
+    await controller.start();
     simulateToolUse();
     fireStatus("waiting", "approve Bash");
 
     const req = parsedLines().find(l => l.type === "control_request");
     controller.handleControlResponse({ behavior: "deny" }, req.request_id);
+    await Promise.resolve();
+    await Promise.resolve();
     expect(ptyHandle.writes).toContain("\x1b");
   });
 
@@ -801,6 +1069,22 @@ describe("handleStdinEof", () => {
     expect(ptyHandle.kills).toHaveLength(0);
   });
 
+  it("does not shut down while a prompt is dispatched but not busy yet", async () => {
+    const { controller, fireStatus, ptyHandle } = createTestController({ args: { inputFormat: "stream-json" } });
+    await controller.start();
+
+    fireStatus("idle");
+    controller.enqueuePrompt("pending busy");
+    await Promise.resolve();
+    await Promise.resolve();
+
+    controller.handleStdinEof();
+    vi.advanceTimersByTime(100);
+
+    expect(ptyHandle.writes.join("")).toContain("pending busy");
+    expect(ptyHandle.kills).toHaveLength(0);
+  });
+
   it("shuts down after active turn completes when stdin is closed", () => {
     const { controller, fireStatus, ptyHandle } = createTestController({ args: { inputFormat: "stream-json" } });
     fireStatus("busy");
@@ -808,6 +1092,38 @@ describe("handleStdinEof", () => {
     fireStatus("idle");
     vi.advanceTimersByTime(100);
     expect(ptyHandle.kills.length).toBeGreaterThan(0);
+  });
+
+  it("exits 1 when stdin closes after a control-request interrupted-only turn", async () => {
+    const { controller, fireStatus, exitCodes } = createTestController({ args: { inputFormat: "stream-json" } });
+    await controller.start();
+
+    fireStatus("busy");
+    controller.handleControlRequest({ subtype: "interrupt" });
+    await Promise.resolve();
+    await Promise.resolve();
+    controller.handleStdinEof();
+    fireStatus("idle");
+    controller.handleClaudeExit(0);
+    await Promise.resolve();
+
+    expect(exitCodes).toEqual([1]);
+  });
+
+  it("exits 0 when stdin closes after a SIGINT interrupted-only turn", async () => {
+    const { controller, fireStatus, exitCodes } = createTestController({ args: { inputFormat: "stream-json" } });
+    await controller.start();
+
+    fireStatus("busy");
+    controller.interrupt();
+    await Promise.resolve();
+    await Promise.resolve();
+    controller.handleStdinEof();
+    fireStatus("idle");
+    controller.handleClaudeExit(0);
+    await Promise.resolve();
+
+    expect(exitCodes).toEqual([0]);
   });
 
   it("does not drop queued prompts while waiting for the previous turn to finish", async () => {
@@ -847,6 +1163,26 @@ describe("interrupt", () => {
   it("sends ESC to PTY", () => {
     const { controller, ptyHandle } = createTestController();
     controller.interrupt();
+    expect(ptyHandle.writes).toContain("\x1b");
+  });
+
+  it("routes SIGINT through dispatch interrupt when a prompt is being accepted", async () => {
+    const { controller, fireStatus, ptyHandle } = createTestController({
+      args: { inputFormat: "stream-json" },
+    });
+    await controller.start();
+
+    fireStatus("idle");
+    controller.enqueuePrompt("slow prompt");
+    await Promise.resolve();
+    await Promise.resolve();
+
+    controller.interrupt();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(ptyHandle.writes).not.toContain("\x1b");
+    fireStatus("busy");
     expect(ptyHandle.writes).toContain("\x1b");
   });
 
