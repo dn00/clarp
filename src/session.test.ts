@@ -508,6 +508,35 @@ describe("handleControlRequest", () => {
     expect(ptyHandle.writes.findIndex(w => w === "/model claude-sonnet-4-6\r")).toBeGreaterThan(escIndex);
   });
 
+  it("set_model does not time out while a turn is still running", async () => {
+    vi.useFakeTimers();
+    try {
+      const { controller, fireStatus, ptyHandle } = createTestController({
+        args: { inputFormat: "stream-json" },
+      });
+      const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+      await controller.start();
+
+      fireStatus("busy");
+      controller.handleControlRequest({ subtype: "set_model", model: "claude-sonnet-4-6" });
+      await Promise.resolve();
+      await Promise.resolve();
+
+      await vi.advanceTimersByTimeAsync(60_000);
+
+      expect(stderr.mock.calls.map(c => String(c[0])).join("")).not.toContain("Timed out after 30s waiting for Claude");
+      expect(ptyHandle.kills).toHaveLength(0);
+      expect(ptyHandle.writes).not.toContain("/model claude-sonnet-4-6\r");
+
+      fireStatus("idle");
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(ptyHandle.writes).toContain("/model claude-sonnet-4-6\r");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("get_context_usage emits control_response on stdout", () => {
     const { controller } = createTestController();
     controller.handleControlRequest({ subtype: "get_context_usage" }, "req-123");
@@ -1145,6 +1174,28 @@ describe("handleStdinEof", () => {
     expect(ptyHandle.writes.join("")).toContain("two");
   });
 
+  it("does not time out queued prompts while a turn is still running", async () => {
+    const { controller, fireStatus, ptyHandle } = createTestController({ args: { inputFormat: "stream-json" } });
+    const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    await controller.start();
+
+    fireStatus("busy");
+    controller.enqueuePrompt("queued behind long turn");
+    controller.handleStdinEof();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    expect(stderr.mock.calls.map(c => String(c[0])).join("")).not.toContain("Timed out after 30s waiting for Claude");
+    expect(ptyHandle.kills).toHaveLength(0);
+
+    fireStatus("idle");
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(ptyHandle.writes.join("")).toContain("queued behind long turn");
+  });
+
   it("does not shut down when queue has items", () => {
     const { controller, ptyHandle } = createTestController({ args: { inputFormat: "stream-json" } });
     controller.enqueuePrompt("pending");
@@ -1167,6 +1218,29 @@ describe("handleStdinEof", () => {
 
     expect(stderr.mock.calls.map(c => String(c[0])).join("")).toContain("Timed out after 30s waiting for Claude");
     expect(ptyHandle.kills).toContain("SIGTERM");
+
+    controller.handleClaudeExit(143);
+    await Promise.resolve();
+    expect(exitCodes).toEqual([1]);
+  });
+
+  it("times out instead of hanging when queued prompt waits on unresolved permission", async () => {
+    const { controller, fireStatus, ptyHandle, exitCodes } = createTestController({ args: { inputFormat: "stream-json" } });
+    const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    await controller.start();
+
+    fireStatus("busy");
+    fireStatus("waiting", "approve Bash");
+    controller.enqueuePrompt("queued behind permission");
+    controller.handleStdinEof();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    await vi.advanceTimersByTimeAsync(30_000);
+
+    expect(stderr.mock.calls.map(c => String(c[0])).join("")).toContain("Timed out after 30s waiting for Claude");
+    expect(ptyHandle.kills).toContain("SIGTERM");
+    expect(ptyHandle.writes.join("")).not.toContain("queued behind permission");
 
     controller.handleClaudeExit(143);
     await Promise.resolve();
