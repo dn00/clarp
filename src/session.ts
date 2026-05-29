@@ -31,6 +31,7 @@ import {
 import * as output from "./output.js";
 
 const TRANSCRIPT_EVENT_CLOCK_SKEW_MS = 5_000;
+const READY_TIMEOUT_MS = 30_000;
 const EMPTY_TURN_TRANSCRIPT_GRACE_MS = 1500;
 const INTERRUPT_DISPATCH_ACK_TIMEOUT_MS = 2000;
 const INTERRUPT_ESCAPE_ACK_TIMEOUT_MS = 1000;
@@ -85,6 +86,7 @@ export class SessionController {
   private forceExitTimer: ReturnType<typeof setTimeout> | null = null;
   private pidWatcherTimer: ReturnType<typeof setTimeout> | null = null;
   private emptyTurnTimer: ReturnType<typeof setTimeout> | null = null;
+  private readinessTimer: ReturnType<typeof setTimeout> | null = null;
   private cleanupPromise: Promise<void> | null = null;
   private cleanupResolve: (() => void) | null = null;
   private cleanupReject: ((err: unknown) => void) | null = null;
@@ -419,8 +421,38 @@ export class SessionController {
     while (!this.processExited && !this.shuttingDown) {
       if (this.processNextSessionOp()) continue;
       if (this.opQueue.isClosed && this.opQueue.length === 0) break;
-      await this.opQueue.waitForChange();
+      await this.waitForSessionOpChange();
     }
+  }
+
+  private waitForSessionOpChange(): Promise<void> {
+    if (this.opQueue.normalLength === 0 || this.isReadyForPrompt()) {
+      this.clearReadinessTimer();
+      return this.opQueue.waitForChange();
+    }
+
+    if (!this.readinessTimer) {
+      this.readinessTimer = setTimeout(() => {
+        this.readinessTimer = null;
+        if (
+          this.processExited ||
+          this.shuttingDown ||
+          this.opQueue.normalLength === 0 ||
+          this.isReadyForPrompt()
+        ) return;
+        const err = new Error(
+          `Timed out after ${READY_TIMEOUT_MS / 1000}s waiting for Claude to become ready. ` +
+          `Claude may be showing a startup, trust, or permission prompt, or Clarp may be unable to observe Claude's PID status. ` +
+          `Open Claude Code in this project to resolve any prompts, check that the project is trusted, ` +
+          `or use --dangerously-skip-permissions only when that matches your security policy.`
+        );
+        this.reportAsyncError("Dispatch loop failed", err);
+        this.requestShutdown(1);
+        this.opQueue.wake();
+      }, READY_TIMEOUT_MS);
+    }
+
+    return this.opQueue.waitForChange();
   }
 
   private processNextSessionOp(): boolean {
@@ -480,6 +512,7 @@ export class SessionController {
   }
 
   private markReady(): void {
+    this.clearReadinessTimer();
     this.claudeReady = true;
     if (this.isReadyForPrompt()) this.opQueue.wake();
   }
@@ -852,6 +885,7 @@ export class SessionController {
     }
     this.clearEmptyTurnTimer();
     this.clearInterruptTimer();
+    this.clearReadinessTimer();
 
     const cleanupPromise = this.ensureCleanupPromise();
     void (async () => {
@@ -886,6 +920,12 @@ export class SessionController {
     const message = err instanceof Error ? err.message : String(err);
     this.log(`${context}: ${message}`);
     process.stderr.write(`clarp error: ${context}: ${message}\n`);
+  }
+
+  private clearReadinessTimer(): void {
+    if (!this.readinessTimer) return;
+    clearTimeout(this.readinessTimer);
+    this.readinessTimer = null;
   }
 
   private ensureCleanupPromise(): Promise<void> {
