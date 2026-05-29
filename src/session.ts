@@ -2,7 +2,14 @@ import { randomUUID } from "node:crypto";
 import type { Args } from "./args.js";
 import type { Observation, ObservationBackend } from "./backends/types.js";
 import { PidWatcher, type PidWatcherCallbacks } from "./pid-watcher.js";
-import { PromptQueue } from "./prompt-queue.js";
+import {
+  type ControlOp,
+  type NormalOp,
+  type PermissionResponseOp,
+  type PromptOp,
+  type SlashCommandOp,
+  SessionOpQueue,
+} from "./session-op-queue.js";
 import {
   formatTranscriptApiError,
   formatTranscriptApiRetry,
@@ -23,18 +30,27 @@ import {
 } from "./pty-host.js";
 import * as output from "./output.js";
 
-const READY_TIMEOUT_MS = 30_000;
 const TRANSCRIPT_EVENT_CLOCK_SKEW_MS = 5_000;
 const EMPTY_TURN_TRANSCRIPT_GRACE_MS = 1500;
+const INTERRUPT_DISPATCH_ACK_TIMEOUT_MS = 2000;
+const INTERRUPT_ESCAPE_ACK_TIMEOUT_MS = 1000;
+const INTERRUPT_CTRL_C_ACK_TIMEOUT_MS = 1500;
+const INTERRUPT_SIGINT_ACK_TIMEOUT_MS = 2000;
+
 type PidWatcherLike = Pick<
   PidWatcher,
   "start" | "stop" | "getSessionId" | "getTranscriptPath" | "readTranscriptInit" | "readTranscriptEvents"
 >;
 
-type ReadyWaiter = {
-  resolve: () => void;
-  reject: (err: Error) => void;
-  timer: ReturnType<typeof setTimeout>;
+type InterruptMethod = "pty_escape" | "pty_ctrl_c" | "process_sigint" | "process_sigterm";
+
+type InterruptTransaction = {
+  requestId: string;
+  controlRequestId?: string;
+  reason: string;
+  startedAt: number;
+  methods: InterruptMethod[];
+  timer: ReturnType<typeof setTimeout> | null;
 };
 
 export type SessionControllerOptions = {
@@ -48,7 +64,7 @@ export type SessionControllerOptions = {
 };
 
 /**
- * Coordinates the PTY, PID watcher, observation backend, stdin prompt queue,
+ * Coordinates the PTY, PID watcher, observation backend, session operation queue,
  * and stream-json output lifecycle for one Claude process.
  */
 export class SessionController {
@@ -61,8 +77,7 @@ export class SessionController {
   private stdinClosed = false;
   private pendingPermissionRequestId: string | null = null;
   private permissionWarningShown = false;
-  private promptQueue = new PromptQueue();
-  private readyWaiter: ReadyWaiter | null = null;
+  private opQueue = new SessionOpQueue();
   private pidWatcher: PidWatcherLike;
   private started = false;
   private shuttingDown = false;
@@ -74,6 +89,12 @@ export class SessionController {
   private cleanupResolve: (() => void) | null = null;
   private cleanupReject: ((err: unknown) => void) | null = null;
   private shutdownExitCode = 0;
+  private interruptInFlight: InterruptTransaction | null = null;
+  private interruptSequence = 0;
+  private promptDispatchInFlight = false;
+  private turnInterrupted = false;
+  private prefixNextPromptWithInterruptedMarker = false;
+  private interruptedOnlyExitCode: number | null = null;
   private readonly startedAt = Date.now();
   private backendObservationStarted = false;
   private transcriptObserver: TranscriptObserver | null = null;
@@ -168,6 +189,7 @@ export class SessionController {
     }
 
     if (status === "busy" && !this.turnActive) {
+      this.promptDispatchInFlight = false;
       this.turnActive = true;
       this.turnCount++;
       this.turnStart = Date.now();
@@ -178,12 +200,26 @@ export class SessionController {
 
       if (this.opts.args.maxTurns && this.turnCount > this.opts.args.maxTurns) {
         this.log(`Max turns (${this.opts.args.maxTurns}) reached`);
-        sendInterrupt(this.opts.ptyHandle);
+        this.opQueue.enqueue({
+          type: "interrupt",
+          reason: "max_turns",
+          emitControlResponse: false,
+        });
       }
+
+      this.sendPendingDispatchInterrupt("pid_busy");
+    }
+
+    if (status === "idle") {
+      this.completeInterrupt("pid_idle");
     }
 
     if (status === "idle" && this.turnActive) {
-      this.completeTurnOrWaitForTranscriptError();
+      if (this.turnInterrupted) {
+        this.completeTurn();
+      } else {
+        this.completeTurnOrWaitForTranscriptError();
+      }
       return;
     }
 
@@ -200,7 +236,7 @@ export class SessionController {
    * Queues a prompt to be sent once Claude is ready for input.
    */
   enqueuePrompt(content: string): void {
-    this.promptQueue.enqueue({ content });
+    this.opQueue.enqueue({ type: "prompt", content });
   }
 
   /**
@@ -210,8 +246,12 @@ export class SessionController {
     if (this.processExited) return;
     if (req.subtype === "interrupt") {
       this.log("Interrupt");
-      if (!this.shouldForwardControlInterrupt()) return;
-      sendInterrupt(this.opts.ptyHandle);
+      this.opQueue.enqueue({
+        type: "interrupt",
+        reason: "control_request",
+        requestId,
+        emitControlResponse: true,
+      });
     } else if (req.subtype === "get_context_usage" && requestId) {
       const usage = output.getContextUsage();
       this.log(`Context usage: ${usage.input_tokens} in, ${usage.output_tokens} out`);
@@ -225,12 +265,16 @@ export class SessionController {
       const model = req.model as string;
       if (model) {
         this.log(`Set model: ${model}`);
-        sendSlashCommand(this.opts.ptyHandle, `model ${model}`);
+        this.opQueue.enqueue({ type: "slash_command", command: `model ${model}` });
       }
     } else if (req.subtype === "stop_task") {
       this.log("Stop task");
-      if (!this.shouldForwardControlInterrupt()) return;
-      sendInterrupt(this.opts.ptyHandle);
+      this.opQueue.enqueue({
+        type: "stop_task",
+        reason: "stop_task",
+        requestId,
+        emitControlResponse: true,
+      });
     }
   }
 
@@ -242,10 +286,10 @@ export class SessionController {
     if (requestId !== this.pendingPermissionRequestId) return;
     if (resp.behavior === "allow") {
       this.log(`Permission allow: ${requestId}`);
-      sendPermissionAllow(this.opts.ptyHandle);
+      this.opQueue.enqueue({ type: "permission_response", behavior: "allow", requestId });
     } else if (resp.behavior === "deny") {
       this.log(`Permission deny: ${requestId}`);
-      sendPermissionDeny(this.opts.ptyHandle);
+      this.opQueue.enqueue({ type: "permission_response", behavior: "deny", requestId });
     }
     this.pendingPermissionRequestId = null;
   }
@@ -258,6 +302,7 @@ export class SessionController {
     this.processExited = true;
     this.log(`Claude exited: ${code}`);
     this.clearEmptyTurnTimer();
+    this.completeInterrupt("process_exit");
     if (this.turnActive) {
       this.turnActive = false;
       if (!this.opts.backend.capabilities.emitsResults) {
@@ -285,12 +330,20 @@ export class SessionController {
    */
   interrupt(): void {
     this.log("SIGINT");
-    if (!this.processExited) {
+    if (this.processExited) return;
+
+    if (this.shouldForwardControlInterrupt()) {
+      this.opQueue.enqueue({
+        type: "interrupt",
+        reason: "process_sigint",
+        emitControlResponse: false,
+      });
+    } else {
       sendInterrupt(this.opts.ptyHandle);
-      setTimeout(() => {
-        if (!this.processExited) this.opts.ptyHandle.kill("SIGTERM");
-      }, 2000);
     }
+    setTimeout(() => {
+      if (!this.processExited) this.opts.ptyHandle.kill("SIGTERM");
+    }, 2000);
   }
 
   /**
@@ -301,8 +354,8 @@ export class SessionController {
     if (this.shuttingDown) return this.ensureCleanupPromise();
     this.shuttingDown = true;
     this.shutdownExitCode = exitCode;
-    this.promptQueue.close();
-    this.wakeReady();
+    this.opQueue.close();
+    this.clearInterruptTimer();
 
     if (!this.processExited) {
       const cleanupPromise = this.ensureCleanupPromise();
@@ -364,60 +417,226 @@ export class SessionController {
 
   private async runDispatchLoop(): Promise<void> {
     while (!this.processExited && !this.shuttingDown) {
-      const hasItem = await this.promptQueue.waitForItem();
-      if (!hasItem || this.processExited || this.shuttingDown) break;
-      await this.waitForReady();
-      if (this.processExited || this.shuttingDown) break;
-      const item = this.promptQueue.dequeue();
-      if (!item) continue;
-
-      this.log(`Sending: ${item.content.slice(0, 80)}`);
-      output.resetAccumulatedText();
-      output.emitUserReplay(item.content);
-      this.claudeReady = false;
-      sendPrompt(this.opts.ptyHandle, item.content);
+      if (this.processNextSessionOp()) continue;
+      if (this.opQueue.isClosed && this.opQueue.length === 0) break;
+      await this.opQueue.waitForChange();
     }
   }
 
-  private waitForReady(): Promise<void> {
-    if (this.claudeReady && !this.turnActive) return Promise.resolve();
-    if (this.processExited || this.shuttingDown) return Promise.resolve();
-    if (this.readyWaiter) {
-      this.readyWaiter.reject(new Error("Superseded by a newer readiness wait"));
-      clearTimeout(this.readyWaiter.timer);
-      this.readyWaiter = null;
+  private processNextSessionOp(): boolean {
+    const control = this.opQueue.dequeueControl();
+    if (control) {
+      this.applyControlOp(control);
+      return true;
     }
-    return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        if (this.readyWaiter?.timer === timer) {
-          this.readyWaiter = null;
-        }
-        reject(new Error(
-          `Timed out after ${READY_TIMEOUT_MS / 1000}s waiting for Claude to become ready. ` +
-          `This can happen if Claude is showing a workspace trust dialog. ` +
-          `Try --dangerously-skip-permissions or run from a trusted project directory.`
-        ));
-      }, READY_TIMEOUT_MS);
-      this.readyWaiter = { resolve, reject, timer };
-    });
+
+    if (!this.isReadyForPrompt()) return false;
+    const normal = this.opQueue.dequeueNormal();
+    if (!normal) return false;
+    this.applyNormalOp(normal);
+    return true;
+  }
+
+  private applyNormalOp(op: NormalOp): void {
+    if (op.type === "prompt") {
+      this.dispatchPrompt(op);
+    } else {
+      this.dispatchSlashCommand(op);
+    }
+  }
+
+  private dispatchPrompt(item: PromptOp): void {
+    this.log(`Sending: ${item.content.slice(0, 80)}`);
+    output.resetAccumulatedText();
+    output.emitUserReplay(item.content);
+    this.claudeReady = false;
+    this.promptDispatchInFlight = true;
+    const content = this.prefixNextPromptWithInterruptedMarker
+      ? `[Request interrupted by user]\n\n${item.content}`
+      : item.content;
+    this.prefixNextPromptWithInterruptedMarker = false;
+    sendPrompt(this.opts.ptyHandle, content);
+  }
+
+  private dispatchSlashCommand(op: SlashCommandOp): void {
+    sendSlashCommand(this.opts.ptyHandle, op.command);
+  }
+
+  private applyControlOp(op: ControlOp): void {
+    if (op.type === "permission_response") {
+      this.applyPermissionResponseOp(op);
+      return;
+    }
+    this.requestControlInterrupt(op.reason, op.requestId, op.emitControlResponse);
+  }
+
+  private applyPermissionResponseOp(op: PermissionResponseOp): void {
+    this.claudeReady = false;
+    if (op.behavior === "allow") {
+      sendPermissionAllow(this.opts.ptyHandle);
+    } else {
+      sendPermissionDeny(this.opts.ptyHandle);
+    }
   }
 
   private markReady(): void {
     this.claudeReady = true;
-    this.wakeReady();
-  }
-
-  private wakeReady(): void {
-    if (this.readyWaiter) {
-      const waiter = this.readyWaiter;
-      this.readyWaiter = null;
-      clearTimeout(waiter.timer);
-      waiter.resolve();
-    }
+    if (this.isReadyForPrompt()) this.opQueue.wake();
   }
 
   private shouldForwardControlInterrupt(): boolean {
-    return this.turnActive || this.waitingForAction || this.pendingPermissionRequestId !== null;
+    return (
+      this.turnActive ||
+      this.promptDispatchInFlight ||
+      this.waitingForAction ||
+      this.pendingPermissionRequestId !== null ||
+      this.opQueue.normalLength > 0
+    );
+  }
+
+  private isReadyForPrompt(): boolean {
+    const interruptWaitingForPromptDispatch = (
+      this.interruptInFlight !== null &&
+      this.interruptInFlight.methods.length === 0 &&
+      !this.turnActive &&
+      !this.promptDispatchInFlight &&
+      !this.waitingForAction
+    );
+    return (
+      this.claudeReady &&
+      !this.turnActive &&
+      !this.promptDispatchInFlight &&
+      !this.waitingForAction &&
+      this.pendingPermissionRequestId === null &&
+      (this.interruptInFlight === null || interruptWaitingForPromptDispatch) &&
+      !this.processExited &&
+      !this.shuttingDown
+    );
+  }
+
+  private requestControlInterrupt(reason: string, controlRequestId?: string, emitControlResponse = false): void {
+    if (this.interruptInFlight) {
+      if (emitControlResponse) output.emitControlResponseSuccess(controlRequestId);
+      this.handleDuplicateInterrupt(reason);
+      return;
+    }
+    if (!this.shouldForwardControlInterrupt()) return;
+
+    const tx: InterruptTransaction = {
+      requestId: `interrupt-${++this.interruptSequence}`,
+      controlRequestId,
+      reason,
+      startedAt: Date.now(),
+      methods: [],
+      timer: null,
+    };
+    this.interruptInFlight = tx;
+    this.turnInterrupted = true;
+    this.interruptedOnlyExitCode = reason === "process_sigint" ? 0 : 1;
+    if (emitControlResponse) output.emitControlResponseSuccess(controlRequestId);
+
+    if (
+      !this.turnActive &&
+      !this.waitingForAction &&
+      this.pendingPermissionRequestId === null &&
+      (this.promptDispatchInFlight || this.opQueue.normalLength > 0)
+    ) {
+      this.log(`Interrupt deferred until prompt dispatch is accepted (${reason})`);
+      this.scheduleInterruptEscalation(tx, INTERRUPT_DISPATCH_ACK_TIMEOUT_MS);
+      return;
+    }
+
+    this.claudeReady = false;
+    this.sendInterruptEscape(tx);
+  }
+
+  private sendPendingDispatchInterrupt(via: "pid_busy" | "dispatch_timeout"): void {
+    const tx = this.interruptInFlight;
+    if (!tx || tx.methods.includes("pty_escape")) return;
+    this.log(`Interrupt dispatch accepted: ${via} (${tx.requestId})`);
+    this.sendInterruptEscape(tx);
+  }
+
+  private sendInterruptEscape(tx: InterruptTransaction): void {
+    if (this.interruptInFlight !== tx || tx.methods.includes("pty_escape")) return;
+    tx.methods.push("pty_escape");
+    sendInterrupt(this.opts.ptyHandle);
+    this.log(`Interrupt sent: pty_escape (${tx.reason})`);
+    this.scheduleInterruptEscalation(tx, INTERRUPT_ESCAPE_ACK_TIMEOUT_MS);
+  }
+
+  private handleDuplicateInterrupt(reason: string): void {
+    const tx = this.interruptInFlight;
+    if (!tx) return;
+    const elapsedMs = Date.now() - tx.startedAt;
+    if (elapsedMs < 500) {
+      this.log(`Interrupt already in flight: ${tx.requestId} (${reason})`);
+      return;
+    }
+    this.log(`Interrupt duplicate escalates: ${tx.requestId} (${reason})`);
+    this.escalateInterrupt(tx);
+  }
+
+  private scheduleInterruptEscalation(tx: InterruptTransaction, delayMs: number): void {
+    if (tx.timer) clearTimeout(tx.timer);
+    tx.timer = setTimeout(() => {
+      if (this.interruptInFlight === tx && !this.processExited) {
+        this.escalateInterrupt(tx);
+      }
+    }, delayMs);
+  }
+
+  private escalateInterrupt(tx: InterruptTransaction): void {
+    if (this.interruptInFlight !== tx) return;
+    if (tx.timer) {
+      clearTimeout(tx.timer);
+      tx.timer = null;
+    }
+
+    if (!tx.methods.includes("pty_escape")) {
+      this.sendPendingDispatchInterrupt("dispatch_timeout");
+      return;
+    }
+
+    if (!tx.methods.includes("pty_ctrl_c")) {
+      tx.methods.push("pty_ctrl_c");
+      this.opts.ptyHandle.write("\x03");
+      this.log(`Interrupt escalated: pty_ctrl_c (${tx.requestId})`);
+      this.scheduleInterruptEscalation(tx, INTERRUPT_CTRL_C_ACK_TIMEOUT_MS);
+      return;
+    }
+
+    if (!tx.methods.includes("process_sigint")) {
+      tx.methods.push("process_sigint");
+      this.opts.ptyHandle.kill("SIGINT");
+      this.log(`Interrupt escalated: process_sigint (${tx.requestId})`);
+      this.scheduleInterruptEscalation(tx, INTERRUPT_SIGINT_ACK_TIMEOUT_MS);
+      return;
+    }
+
+    if (!tx.methods.includes("process_sigterm")) {
+      tx.methods.push("process_sigterm");
+      this.opts.ptyHandle.kill("SIGTERM");
+      this.log(`Interrupt escalated: process_sigterm (${tx.requestId})`);
+    }
+  }
+
+  private completeInterrupt(via: "pid_idle" | "process_exit"): void {
+    const tx = this.interruptInFlight;
+    if (!tx) return;
+    if (via === "pid_idle" && !tx.methods.includes("pty_escape")) return;
+    this.clearInterruptTimer();
+    this.interruptInFlight = null;
+    this.log(
+      `Interrupt acknowledged: ${via} (${tx.methods.join(", ")}; ${Date.now() - tx.startedAt}ms)`
+    );
+    this.opQueue.wake();
+  }
+
+  private clearInterruptTimer(): void {
+    if (!this.interruptInFlight?.timer) return;
+    clearTimeout(this.interruptInFlight.timer);
+    this.interruptInFlight.timer = null;
   }
 
   private completeTurn(): void {
@@ -426,10 +645,16 @@ export class SessionController {
     const text = output.getAccumulatedText();
     const durationMs = Date.now() - this.turnStart;
 
+    if (this.turnInterrupted) {
+      this.completeInterruptedTurn(durationMs);
+      return;
+    }
+
     if (this.transcriptTurnError) {
       this.completeTurnWithError(this.transcriptTurnError.message, this.transcriptTurnError.status, durationMs);
       return;
     }
+    this.interruptedOnlyExitCode = null;
 
     if (!this.opts.backend.capabilities.emitsPostTurnSummary) {
       const transcriptSummaries = this.pidWatcher.readTranscriptEvents("post_turn_summary");
@@ -460,6 +685,33 @@ export class SessionController {
       return;
     }
 
+    this.markReady();
+    this.maybeShutdownAfterInputDrained();
+  }
+
+  private completeInterruptedTurn(durationMs: number): void {
+    this.turnInterrupted = false;
+    this.transcriptTurnError = null;
+    output.emitInterruptedUserMessage();
+
+    if (!this.opts.backend.capabilities.emitsResults) {
+      output.emitResult("error_during_execution", "", {
+        durationMs,
+        numTurns: this.turnCount,
+        stopReason: null,
+        terminalReason: "aborted_streaming",
+        errors: ["[ede_diagnostic] result_type=user last_content_type=n/a stop_reason=null"],
+      });
+    }
+    output.resetAccumulatedText();
+
+    if (this.opts.args.inputFormat !== "stream-json") {
+      this.log("Single prompt interrupted, exiting");
+      this.requestShutdown(this.interruptedOnlyExitCode ?? 0);
+      return;
+    }
+
+    this.prefixNextPromptWithInterruptedMarker = true;
     this.markReady();
     this.maybeShutdownAfterInputDrained();
   }
@@ -564,9 +816,15 @@ export class SessionController {
   }
 
   private maybeShutdownAfterInputDrained(): void {
-    if (!this.stdinClosed || this.turnActive || this.promptQueue.length > 0) return;
+    if (
+      !this.stdinClosed ||
+      this.turnActive ||
+      this.promptDispatchInFlight ||
+      this.interruptInFlight !== null ||
+      this.opQueue.length > 0
+    ) return;
     this.log("stdin closed and queue empty, exiting");
-    this.requestShutdown(0);
+    this.requestShutdown(this.interruptedOnlyExitCode ?? 0);
   }
 
   private emitInitFromTranscriptOrFallback(): void {
@@ -583,8 +841,7 @@ export class SessionController {
   private cleanup(exitCode: number): Promise<void> {
     if (this.cleanupStarted) return this.ensureCleanupPromise();
     this.cleanupStarted = true;
-    this.promptQueue.close();
-    this.wakeReady();
+    this.opQueue.close();
     if (this.forceExitTimer) {
       clearTimeout(this.forceExitTimer);
       this.forceExitTimer = null;
@@ -594,6 +851,7 @@ export class SessionController {
       this.pidWatcherTimer = null;
     }
     this.clearEmptyTurnTimer();
+    this.clearInterruptTimer();
 
     const cleanupPromise = this.ensureCleanupPromise();
     void (async () => {
