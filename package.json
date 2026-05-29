@@ -1,6 +1,6 @@
 {
   "name": "clarp-cli",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "Drop-in replacement for claude -p. Uses your Claude Code subscription instead of metered API pricing.",
   "type": "module",
   "author": "dn00",
@@ -26,6 +26,8 @@
     "build": "npm run clean && tsc",
     "prepublishOnly": "npm test && npm run build && npm pack --dry-run",
     "parity:stream": "npm run build && node scripts/parity-stream.mjs",
+    "parity:interrupt": "npm run build && node scripts/parity-stream.mjs --cases scripts/cases-interrupt.json --timeout-ms 120000",
+    "probe:pty-interrupt": "node scripts/pty-interrupt-probe.mjs",
     "start": "node dist/cli.js",
     "test": "vitest run",
     "test:watch": "vitest"
