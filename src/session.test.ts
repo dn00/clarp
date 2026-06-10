@@ -545,8 +545,8 @@ describe("handleControlRequest", () => {
 
     const resp = parsedLines().find(l => l.type === "control_response");
     expect(resp).toBeDefined();
-    expect(resp.request_id).toBe("req-123");
-    expect(resp.response.context_usage).toBeDefined();
+    expect(resp.response.request_id).toBe("req-123");
+    expect(resp.response.response.context_usage).toBeDefined();
   });
 
   it("ignores after process exit", () => {
