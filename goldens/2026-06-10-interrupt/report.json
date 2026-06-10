@@ -1,0 +1,1163 @@
+{
+  "model": "sonnet",
+  "captured_at": "2026-06-10T20:17:27.329Z",
+  "native_version": "2.1.170 (Claude Code)",
+  "out_dir": "goldens/2026-06-10-interrupt",
+  "cases": {
+    "baseline-one-shot": {
+      "args": [],
+      "prompts_sent": 1,
+      "mode": "sequence",
+      "out_dir": "goldens/2026-06-10-interrupt/baseline-one-shot",
+      "runs": {
+        "native": {
+          "exit": {
+            "code": 0,
+            "signal": null
+          },
+          "sent": 1,
+          "results_seen": 1,
+          "assistant_count": 2,
+          "result_count": 1,
+          "event_counts": {
+            "assistant": 2,
+            "rate_limit_event": 1,
+            "result.success": 1,
+            "system.init": 1,
+            "system.notification": 1,
+            "system.thinking_tokens": 3
+          },
+          "non_assistant_counts": {
+            "rate_limit_event": 1,
+            "system.init": 1,
+            "system.notification": 1,
+            "system.thinking_tokens": 3
+          },
+          "system_subtypes": [
+            "init",
+            "notification",
+            "thinking_tokens"
+          ],
+          "suspicious_assistant_texts": []
+        }
+      },
+      "timelines": {
+        "native": [
+          {
+            "t": 2,
+            "action": "sequence_start",
+            "steps": 3
+          },
+          {
+            "t": 2,
+            "action": "send_prompt",
+            "index": 0,
+            "content": "Say exactly: READY"
+          },
+          {
+            "t": 2,
+            "action": "wait_result_start"
+          },
+          {
+            "t": 929,
+            "action": "event",
+            "type": "system",
+            "subtype": "init"
+          },
+          {
+            "t": 1972,
+            "action": "event",
+            "type": "rate_limit_event"
+          },
+          {
+            "t": 2748,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 2748,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 2748,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 2748,
+            "action": "event",
+            "type": "assistant"
+          },
+          {
+            "t": 2748,
+            "action": "event",
+            "type": "assistant"
+          },
+          {
+            "t": 2766,
+            "action": "event",
+            "type": "system",
+            "subtype": "notification"
+          },
+          {
+            "t": 2766,
+            "action": "event",
+            "type": "result",
+            "subtype": "success"
+          },
+          {
+            "t": 2766,
+            "action": "result",
+            "subtype": "success"
+          },
+          {
+            "t": 2811,
+            "action": "wait_result_end",
+            "results": 1
+          },
+          {
+            "t": 2811,
+            "action": "close_stdin"
+          },
+          {
+            "t": 2811,
+            "action": "sequence_done_closing_stdin"
+          },
+          {
+            "t": 3134,
+            "action": "exit",
+            "code": 0,
+            "signal": null
+          }
+        ]
+      }
+    },
+    "interrupt-during-long-task": {
+      "args": [],
+      "prompts_sent": 1,
+      "mode": "sequence",
+      "out_dir": "goldens/2026-06-10-interrupt/interrupt-during-long-task",
+      "runs": {
+        "native": {
+          "exit": {
+            "code": 1,
+            "signal": null
+          },
+          "sent": 1,
+          "results_seen": 1,
+          "assistant_count": 0,
+          "result_count": 1,
+          "event_counts": {
+            "control_response": 1,
+            "rate_limit_event": 1,
+            "result.error_during_execution": 1,
+            "system.init": 1,
+            "user": 1
+          },
+          "non_assistant_counts": {
+            "control_response": 1,
+            "rate_limit_event": 1,
+            "system.init": 1,
+            "user": 1
+          },
+          "system_subtypes": [
+            "init"
+          ],
+          "suspicious_assistant_texts": []
+        }
+      },
+      "timelines": {
+        "native": [
+          {
+            "t": 2,
+            "action": "sequence_start",
+            "steps": 4
+          },
+          {
+            "t": 2,
+            "action": "send_prompt",
+            "index": 0,
+            "content": "Count slowly from 1 to 100, one number per line."
+          },
+          {
+            "t": 2,
+            "action": "delay_start",
+            "ms": 2000
+          },
+          {
+            "t": 738,
+            "action": "event",
+            "type": "system",
+            "subtype": "init"
+          },
+          {
+            "t": 1735,
+            "action": "event",
+            "type": "rate_limit_event"
+          },
+          {
+            "t": 2003,
+            "action": "delay_end"
+          },
+          {
+            "t": 2003,
+            "action": "send_control",
+            "subtype": "interrupt"
+          },
+          {
+            "t": 2003,
+            "action": "wait_result_start"
+          },
+          {
+            "t": 2004,
+            "action": "event",
+            "type": "control_response"
+          },
+          {
+            "t": 2011,
+            "action": "event",
+            "type": "user"
+          },
+          {
+            "t": 2012,
+            "action": "event",
+            "type": "result",
+            "subtype": "error_during_execution"
+          },
+          {
+            "t": 2012,
+            "action": "result",
+            "subtype": "error_during_execution"
+          },
+          {
+            "t": 2053,
+            "action": "wait_result_end",
+            "results": 1
+          },
+          {
+            "t": 2053,
+            "action": "close_stdin"
+          },
+          {
+            "t": 2053,
+            "action": "sequence_done_closing_stdin"
+          },
+          {
+            "t": 2335,
+            "action": "exit",
+            "code": 1,
+            "signal": null
+          }
+        ]
+      }
+    },
+    "interrupt-then-immediate-prompt": {
+      "args": [],
+      "prompts_sent": 2,
+      "mode": "sequence",
+      "out_dir": "goldens/2026-06-10-interrupt/interrupt-then-immediate-prompt",
+      "runs": {
+        "native": {
+          "exit": {
+            "code": 0,
+            "signal": null
+          },
+          "sent": 2,
+          "results_seen": 2,
+          "assistant_count": 2,
+          "result_count": 2,
+          "event_counts": {
+            "assistant": 2,
+            "control_response": 1,
+            "rate_limit_event": 1,
+            "result.error_during_execution": 1,
+            "result.success": 1,
+            "system.init": 2,
+            "system.notification": 1,
+            "system.thinking_tokens": 3,
+            "user": 1
+          },
+          "non_assistant_counts": {
+            "control_response": 1,
+            "rate_limit_event": 1,
+            "system.init": 2,
+            "system.notification": 1,
+            "system.thinking_tokens": 3,
+            "user": 1
+          },
+          "system_subtypes": [
+            "init",
+            "notification",
+            "thinking_tokens"
+          ],
+          "suspicious_assistant_texts": []
+        }
+      },
+      "timelines": {
+        "native": [
+          {
+            "t": 2,
+            "action": "sequence_start",
+            "steps": 6
+          },
+          {
+            "t": 2,
+            "action": "send_prompt",
+            "index": 0,
+            "content": "Count slowly from 1 to 100, one number per line."
+          },
+          {
+            "t": 2,
+            "action": "delay_start",
+            "ms": 2000
+          },
+          {
+            "t": 806,
+            "action": "event",
+            "type": "system",
+            "subtype": "init"
+          },
+          {
+            "t": 1945,
+            "action": "event",
+            "type": "rate_limit_event"
+          },
+          {
+            "t": 2003,
+            "action": "delay_end"
+          },
+          {
+            "t": 2003,
+            "action": "send_control",
+            "subtype": "interrupt"
+          },
+          {
+            "t": 2003,
+            "action": "delay_start",
+            "ms": 50
+          },
+          {
+            "t": 2004,
+            "action": "event",
+            "type": "control_response"
+          },
+          {
+            "t": 2009,
+            "action": "event",
+            "type": "user"
+          },
+          {
+            "t": 2009,
+            "action": "event",
+            "type": "result",
+            "subtype": "error_during_execution"
+          },
+          {
+            "t": 2009,
+            "action": "result",
+            "subtype": "error_during_execution"
+          },
+          {
+            "t": 2054,
+            "action": "delay_end"
+          },
+          {
+            "t": 2054,
+            "action": "send_prompt",
+            "index": 1,
+            "content": "Say exactly: AFTER_INTERRUPT"
+          },
+          {
+            "t": 2055,
+            "action": "wait_result_start"
+          },
+          {
+            "t": 2058,
+            "action": "event",
+            "type": "system",
+            "subtype": "init"
+          },
+          {
+            "t": 3926,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 3926,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 3927,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 3927,
+            "action": "event",
+            "type": "assistant"
+          },
+          {
+            "t": 3927,
+            "action": "event",
+            "type": "assistant"
+          },
+          {
+            "t": 4003,
+            "action": "event",
+            "type": "system",
+            "subtype": "notification"
+          },
+          {
+            "t": 4003,
+            "action": "event",
+            "type": "result",
+            "subtype": "success"
+          },
+          {
+            "t": 4003,
+            "action": "result",
+            "subtype": "success"
+          },
+          {
+            "t": 4044,
+            "action": "wait_result_end",
+            "results": 2
+          },
+          {
+            "t": 4044,
+            "action": "wait_result_start"
+          },
+          {
+            "t": 34046,
+            "action": "wait_result_end",
+            "results": 2
+          },
+          {
+            "t": 34046,
+            "action": "close_stdin"
+          },
+          {
+            "t": 34046,
+            "action": "sequence_done_closing_stdin"
+          },
+          {
+            "t": 34274,
+            "action": "exit",
+            "code": 0,
+            "signal": null
+          }
+        ]
+      }
+    },
+    "sigint-during-long-task": {
+      "args": [],
+      "prompts_sent": 1,
+      "mode": "sequence",
+      "out_dir": "goldens/2026-06-10-interrupt/sigint-during-long-task",
+      "runs": {
+        "native": {
+          "exit": {
+            "code": 0,
+            "signal": null
+          },
+          "sent": 1,
+          "results_seen": 1,
+          "assistant_count": 0,
+          "result_count": 1,
+          "event_counts": {
+            "rate_limit_event": 1,
+            "result.error_during_execution": 1,
+            "system.init": 1,
+            "user": 1
+          },
+          "non_assistant_counts": {
+            "rate_limit_event": 1,
+            "system.init": 1,
+            "user": 1
+          },
+          "system_subtypes": [
+            "init"
+          ],
+          "suspicious_assistant_texts": []
+        }
+      },
+      "timelines": {
+        "native": [
+          {
+            "t": 2,
+            "action": "sequence_start",
+            "steps": 4
+          },
+          {
+            "t": 2,
+            "action": "send_prompt",
+            "index": 0,
+            "content": "Count slowly from 1 to 100, one number per line."
+          },
+          {
+            "t": 2,
+            "action": "delay_start",
+            "ms": 2000
+          },
+          {
+            "t": 787,
+            "action": "event",
+            "type": "system",
+            "subtype": "init"
+          },
+          {
+            "t": 1869,
+            "action": "event",
+            "type": "rate_limit_event"
+          },
+          {
+            "t": 2003,
+            "action": "delay_end"
+          },
+          {
+            "t": 2003,
+            "action": "send_signal",
+            "signal": "SIGINT"
+          },
+          {
+            "t": 2003,
+            "action": "wait_result_start"
+          },
+          {
+            "t": 2023,
+            "action": "event",
+            "type": "user"
+          },
+          {
+            "t": 2023,
+            "action": "event",
+            "type": "result",
+            "subtype": "error_during_execution"
+          },
+          {
+            "t": 2023,
+            "action": "result",
+            "subtype": "error_during_execution"
+          },
+          {
+            "t": 2054,
+            "action": "wait_result_end",
+            "results": 1
+          },
+          {
+            "t": 2054,
+            "action": "close_stdin"
+          },
+          {
+            "t": 2054,
+            "action": "sequence_done_closing_stdin"
+          },
+          {
+            "t": 2299,
+            "action": "exit",
+            "code": 0,
+            "signal": null
+          }
+        ]
+      }
+    },
+    "double-interrupt": {
+      "args": [],
+      "prompts_sent": 1,
+      "mode": "sequence",
+      "out_dir": "goldens/2026-06-10-interrupt/double-interrupt",
+      "runs": {
+        "native": {
+          "exit": {
+            "code": 0,
+            "signal": null
+          },
+          "sent": 1,
+          "results_seen": 1,
+          "assistant_count": 0,
+          "result_count": 1,
+          "event_counts": {
+            "control_response": 2,
+            "rate_limit_event": 1,
+            "result.error_during_execution": 1,
+            "system.init": 1,
+            "user": 1
+          },
+          "non_assistant_counts": {
+            "control_response": 2,
+            "rate_limit_event": 1,
+            "system.init": 1,
+            "user": 1
+          },
+          "system_subtypes": [
+            "init"
+          ],
+          "suspicious_assistant_texts": []
+        }
+      },
+      "timelines": {
+        "native": [
+          {
+            "t": 2,
+            "action": "sequence_start",
+            "steps": 5
+          },
+          {
+            "t": 2,
+            "action": "send_prompt",
+            "index": 0,
+            "content": "Write a 500 word essay about testing."
+          },
+          {
+            "t": 2,
+            "action": "delay_start",
+            "ms": 1500
+          },
+          {
+            "t": 771,
+            "action": "event",
+            "type": "system",
+            "subtype": "init"
+          },
+          {
+            "t": 1504,
+            "action": "delay_end"
+          },
+          {
+            "t": 1504,
+            "action": "send_control",
+            "subtype": "interrupt"
+          },
+          {
+            "t": 1504,
+            "action": "delay_start",
+            "ms": 500
+          },
+          {
+            "t": 1504,
+            "action": "event",
+            "type": "control_response"
+          },
+          {
+            "t": 1509,
+            "action": "event",
+            "type": "user"
+          },
+          {
+            "t": 1509,
+            "action": "event",
+            "type": "result",
+            "subtype": "error_during_execution"
+          },
+          {
+            "t": 1509,
+            "action": "result",
+            "subtype": "error_during_execution"
+          },
+          {
+            "t": 1576,
+            "action": "event",
+            "type": "rate_limit_event"
+          },
+          {
+            "t": 2005,
+            "action": "delay_end"
+          },
+          {
+            "t": 2005,
+            "action": "send_control",
+            "subtype": "interrupt"
+          },
+          {
+            "t": 2005,
+            "action": "wait_result_start"
+          },
+          {
+            "t": 2007,
+            "action": "event",
+            "type": "control_response"
+          },
+          {
+            "t": 17007,
+            "action": "wait_result_end",
+            "results": 1
+          },
+          {
+            "t": 17007,
+            "action": "close_stdin"
+          },
+          {
+            "t": 17007,
+            "action": "sequence_done_closing_stdin"
+          },
+          {
+            "t": 17180,
+            "action": "exit",
+            "code": 0,
+            "signal": null
+          }
+        ]
+      }
+    },
+    "interrupt-zero-delay-prompt": {
+      "args": [],
+      "prompts_sent": 2,
+      "mode": "sequence",
+      "out_dir": "goldens/2026-06-10-interrupt/interrupt-zero-delay-prompt",
+      "runs": {
+        "native": {
+          "exit": {
+            "code": 0,
+            "signal": null
+          },
+          "sent": 2,
+          "results_seen": 2,
+          "assistant_count": 2,
+          "result_count": 2,
+          "event_counts": {
+            "assistant": 2,
+            "control_response": 1,
+            "rate_limit_event": 1,
+            "result.error_during_execution": 1,
+            "result.success": 1,
+            "system.init": 2,
+            "system.notification": 1,
+            "system.thinking_tokens": 3,
+            "user": 1
+          },
+          "non_assistant_counts": {
+            "control_response": 1,
+            "rate_limit_event": 1,
+            "system.init": 2,
+            "system.notification": 1,
+            "system.thinking_tokens": 3,
+            "user": 1
+          },
+          "system_subtypes": [
+            "init",
+            "notification",
+            "thinking_tokens"
+          ],
+          "suspicious_assistant_texts": []
+        }
+      },
+      "timelines": {
+        "native": [
+          {
+            "t": 2,
+            "action": "sequence_start",
+            "steps": 6
+          },
+          {
+            "t": 2,
+            "action": "send_prompt",
+            "index": 0,
+            "content": "Count slowly from 1 to 100, one number per line."
+          },
+          {
+            "t": 2,
+            "action": "delay_start",
+            "ms": 2000
+          },
+          {
+            "t": 913,
+            "action": "event",
+            "type": "system",
+            "subtype": "init"
+          },
+          {
+            "t": 2004,
+            "action": "delay_end"
+          },
+          {
+            "t": 2004,
+            "action": "send_control",
+            "subtype": "interrupt"
+          },
+          {
+            "t": 2004,
+            "action": "send_prompt",
+            "index": 1,
+            "content": "Say exactly: ZERO_DELAY_B"
+          },
+          {
+            "t": 2004,
+            "action": "wait_result_start"
+          },
+          {
+            "t": 2004,
+            "action": "event",
+            "type": "control_response"
+          },
+          {
+            "t": 2010,
+            "action": "event",
+            "type": "user"
+          },
+          {
+            "t": 2010,
+            "action": "event",
+            "type": "result",
+            "subtype": "error_during_execution"
+          },
+          {
+            "t": 2010,
+            "action": "result",
+            "subtype": "error_during_execution"
+          },
+          {
+            "t": 2013,
+            "action": "event",
+            "type": "system",
+            "subtype": "init"
+          },
+          {
+            "t": 2030,
+            "action": "event",
+            "type": "rate_limit_event"
+          },
+          {
+            "t": 2055,
+            "action": "wait_result_end",
+            "results": 1
+          },
+          {
+            "t": 2055,
+            "action": "wait_result_start"
+          },
+          {
+            "t": 5865,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 5865,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 5866,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 5867,
+            "action": "event",
+            "type": "assistant"
+          },
+          {
+            "t": 5867,
+            "action": "event",
+            "type": "assistant"
+          },
+          {
+            "t": 5935,
+            "action": "event",
+            "type": "system",
+            "subtype": "notification"
+          },
+          {
+            "t": 5936,
+            "action": "event",
+            "type": "result",
+            "subtype": "success"
+          },
+          {
+            "t": 5936,
+            "action": "result",
+            "subtype": "success"
+          },
+          {
+            "t": 5948,
+            "action": "wait_result_end",
+            "results": 2
+          },
+          {
+            "t": 5948,
+            "action": "close_stdin"
+          },
+          {
+            "t": 5948,
+            "action": "sequence_done_closing_stdin"
+          },
+          {
+            "t": 6471,
+            "action": "exit",
+            "code": 0,
+            "signal": null
+          }
+        ]
+      }
+    },
+    "interrupt-then-two-prompts": {
+      "args": [],
+      "prompts_sent": 3,
+      "mode": "sequence",
+      "out_dir": "goldens/2026-06-10-interrupt/interrupt-then-two-prompts",
+      "runs": {
+        "native": {
+          "exit": {
+            "code": 0,
+            "signal": null
+          },
+          "sent": 3,
+          "results_seen": 3,
+          "assistant_count": 4,
+          "result_count": 3,
+          "event_counts": {
+            "assistant": 4,
+            "control_response": 1,
+            "rate_limit_event": 1,
+            "result.error_during_execution": 1,
+            "result.success": 2,
+            "system.init": 3,
+            "system.notification": 2,
+            "system.thinking_tokens": 6,
+            "user": 1
+          },
+          "non_assistant_counts": {
+            "control_response": 1,
+            "rate_limit_event": 1,
+            "system.init": 3,
+            "system.notification": 2,
+            "system.thinking_tokens": 6,
+            "user": 1
+          },
+          "system_subtypes": [
+            "init",
+            "notification",
+            "thinking_tokens"
+          ],
+          "suspicious_assistant_texts": []
+        }
+      },
+      "timelines": {
+        "native": [
+          {
+            "t": 2,
+            "action": "sequence_start",
+            "steps": 7
+          },
+          {
+            "t": 2,
+            "action": "send_prompt",
+            "index": 0,
+            "content": "Count slowly from 1 to 100, one number per line."
+          },
+          {
+            "t": 2,
+            "action": "delay_start",
+            "ms": 2000
+          },
+          {
+            "t": 757,
+            "action": "event",
+            "type": "system",
+            "subtype": "init"
+          },
+          {
+            "t": 1634,
+            "action": "event",
+            "type": "rate_limit_event"
+          },
+          {
+            "t": 2007,
+            "action": "delay_end"
+          },
+          {
+            "t": 2007,
+            "action": "send_control",
+            "subtype": "interrupt"
+          },
+          {
+            "t": 2007,
+            "action": "delay_start",
+            "ms": 50
+          },
+          {
+            "t": 2008,
+            "action": "event",
+            "type": "control_response"
+          },
+          {
+            "t": 2017,
+            "action": "event",
+            "type": "user"
+          },
+          {
+            "t": 2018,
+            "action": "event",
+            "type": "result",
+            "subtype": "error_during_execution"
+          },
+          {
+            "t": 2018,
+            "action": "result",
+            "subtype": "error_during_execution"
+          },
+          {
+            "t": 2057,
+            "action": "delay_end"
+          },
+          {
+            "t": 2057,
+            "action": "send_prompt",
+            "index": 1,
+            "content": "Say exactly: PROMPT_B"
+          },
+          {
+            "t": 2057,
+            "action": "wait_result_start"
+          },
+          {
+            "t": 2061,
+            "action": "event",
+            "type": "system",
+            "subtype": "init"
+          },
+          {
+            "t": 4070,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 4070,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 4070,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 4071,
+            "action": "event",
+            "type": "assistant"
+          },
+          {
+            "t": 4071,
+            "action": "event",
+            "type": "assistant"
+          },
+          {
+            "t": 4166,
+            "action": "event",
+            "type": "system",
+            "subtype": "notification"
+          },
+          {
+            "t": 4172,
+            "action": "event",
+            "type": "result",
+            "subtype": "success"
+          },
+          {
+            "t": 4172,
+            "action": "result",
+            "subtype": "success"
+          },
+          {
+            "t": 4200,
+            "action": "wait_result_end",
+            "results": 2
+          },
+          {
+            "t": 4200,
+            "action": "send_prompt",
+            "index": 2,
+            "content": "Say exactly: PROMPT_C"
+          },
+          {
+            "t": 4200,
+            "action": "wait_result_start"
+          },
+          {
+            "t": 4203,
+            "action": "event",
+            "type": "system",
+            "subtype": "init"
+          },
+          {
+            "t": 5616,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 5779,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 5780,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 5780,
+            "action": "event",
+            "type": "assistant"
+          },
+          {
+            "t": 5782,
+            "action": "event",
+            "type": "assistant"
+          },
+          {
+            "t": 5851,
+            "action": "event",
+            "type": "system",
+            "subtype": "notification"
+          },
+          {
+            "t": 5851,
+            "action": "event",
+            "type": "result",
+            "subtype": "success"
+          },
+          {
+            "t": 5851,
+            "action": "result",
+            "subtype": "success"
+          },
+          {
+            "t": 5896,
+            "action": "wait_result_end",
+            "results": 3
+          },
+          {
+            "t": 5896,
+            "action": "close_stdin"
+          },
+          {
+            "t": 5896,
+            "action": "sequence_done_closing_stdin"
+          },
+          {
+            "t": 6329,
+            "action": "exit",
+            "code": 0,
+            "signal": null
+          }
+        ]
+      }
+    }
+  }
+}

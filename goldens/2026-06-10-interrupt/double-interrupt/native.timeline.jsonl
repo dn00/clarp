@@ -1,0 +1,20 @@
+{"t":2,"action":"sequence_start","steps":5}
+{"t":2,"action":"send_prompt","index":0,"content":"Write a 500 word essay about testing."}
+{"t":2,"action":"delay_start","ms":1500}
+{"t":771,"action":"event","type":"system","subtype":"init"}
+{"t":1504,"action":"delay_end"}
+{"t":1504,"action":"send_control","subtype":"interrupt"}
+{"t":1504,"action":"delay_start","ms":500}
+{"t":1504,"action":"event","type":"control_response"}
+{"t":1509,"action":"event","type":"user"}
+{"t":1509,"action":"event","type":"result","subtype":"error_during_execution"}
+{"t":1509,"action":"result","subtype":"error_during_execution"}
+{"t":1576,"action":"event","type":"rate_limit_event"}
+{"t":2005,"action":"delay_end"}
+{"t":2005,"action":"send_control","subtype":"interrupt"}
+{"t":2005,"action":"wait_result_start"}
+{"t":2007,"action":"event","type":"control_response"}
+{"t":17007,"action":"wait_result_end","results":1}
+{"t":17007,"action":"close_stdin"}
+{"t":17007,"action":"sequence_done_closing_stdin"}
+{"t":17180,"action":"exit","code":0,"signal":null}

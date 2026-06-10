@@ -1,0 +1,30 @@
+{"t":2,"action":"sequence_start","steps":6}
+{"t":2,"action":"send_prompt","index":0,"content":"Count slowly from 1 to 100, one number per line."}
+{"t":2,"action":"delay_start","ms":2000}
+{"t":806,"action":"event","type":"system","subtype":"init"}
+{"t":1945,"action":"event","type":"rate_limit_event"}
+{"t":2003,"action":"delay_end"}
+{"t":2003,"action":"send_control","subtype":"interrupt"}
+{"t":2003,"action":"delay_start","ms":50}
+{"t":2004,"action":"event","type":"control_response"}
+{"t":2009,"action":"event","type":"user"}
+{"t":2009,"action":"event","type":"result","subtype":"error_during_execution"}
+{"t":2009,"action":"result","subtype":"error_during_execution"}
+{"t":2054,"action":"delay_end"}
+{"t":2054,"action":"send_prompt","index":1,"content":"Say exactly: AFTER_INTERRUPT"}
+{"t":2055,"action":"wait_result_start"}
+{"t":2058,"action":"event","type":"system","subtype":"init"}
+{"t":3926,"action":"event","type":"system","subtype":"thinking_tokens"}
+{"t":3926,"action":"event","type":"system","subtype":"thinking_tokens"}
+{"t":3927,"action":"event","type":"system","subtype":"thinking_tokens"}
+{"t":3927,"action":"event","type":"assistant"}
+{"t":3927,"action":"event","type":"assistant"}
+{"t":4003,"action":"event","type":"system","subtype":"notification"}
+{"t":4003,"action":"event","type":"result","subtype":"success"}
+{"t":4003,"action":"result","subtype":"success"}
+{"t":4044,"action":"wait_result_end","results":2}
+{"t":4044,"action":"wait_result_start"}
+{"t":34046,"action":"wait_result_end","results":2}
+{"t":34046,"action":"close_stdin"}
+{"t":34046,"action":"sequence_done_closing_stdin"}
+{"t":34274,"action":"exit","code":0,"signal":null}
