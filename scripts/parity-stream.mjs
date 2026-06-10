@@ -68,17 +68,22 @@ async function loadCases(defaultPrompts) {
     if (!Array.isArray(args) || !args.every(arg => typeof arg === "string")) {
       throw new Error(`case ${name} args must be a string array`);
     }
+    // replaceArgs: use the case args verbatim instead of appending to the
+    // common stream-json args — needed for text/json output-format captures.
+    const replaceArgs = item.replaceArgs === true;
+
+    const cwd = typeof item.cwd === "string" ? item.cwd : undefined;
 
     if (item.sequence) {
       if (!Array.isArray(item.sequence)) throw new Error(`case ${name} sequence must be an array`);
-      return { name, args, sequence: item.sequence };
+      return { name, args, replaceArgs, cwd, sequence: item.sequence };
     }
 
     const prompts = item.prompts === undefined ? defaultPrompts : item.prompts;
     if (!Array.isArray(prompts) || !prompts.every(prompt => typeof prompt === "string")) {
       throw new Error(`case ${name} prompts must be a string array`);
     }
-    return { name, args, prompts };
+    return { name, args, replaceArgs, cwd, prompts };
   });
 }
 
@@ -99,10 +104,26 @@ function writeUserMessage(stdin, content) {
   }) + "\n");
 }
 
-function writeControlRequest(stdin, subtype) {
+let nextControlRequestId = 0;
+
+function writeControlRequest(stdin, subtype, extra = {}) {
   stdin.write(JSON.stringify({
     type: "control_request",
-    request: { subtype },
+    request_id: `parity-${++nextControlRequestId}`,
+    request: { subtype, ...extra },
+  }) + "\n");
+}
+
+// Answers a can_use_tool control_request the way an SDK client would
+// (shape matches src/__fixtures__/claude-p-control-requests-all.jsonl).
+function writeControlResponse(stdin, request, behavior, message) {
+  const toolUseID = request?.request?.tool_use_id;
+  const inner = behavior === "allow"
+    ? { behavior: "allow", toolUseID, updatedInput: request?.request?.input }
+    : { behavior: "deny", message: message ?? "Denied by parity harness", toolUseID };
+  stdin.write(JSON.stringify({
+    type: "control_response",
+    response: { subtype: "success", request_id: request?.request_id, response: inner },
   }) + "\n");
 }
 
@@ -110,7 +131,7 @@ function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-async function runSession({ name, command, args, prompts, sequence, outDir, env = {} }) {
+async function runSession({ name, command, args, prompts, sequence, outDir, env = {}, cwd = root }) {
   if (!command) throw new Error(`Missing command for ${name}`);
   const stdoutPath = resolve(outDir, `${name}.stdout.jsonl`);
   const stderrPath = resolve(outDir, `${name}.stderr.log`);
@@ -118,6 +139,8 @@ async function runSession({ name, command, args, prompts, sequence, outDir, env 
   const parsed = [];
   const timeline = [];
   const stderr = [];
+  const controlRequests = [];
+  let answeredControlRequests = 0;
   let stdout = "";
   let sent = 0;
   let results = 0;
@@ -129,7 +152,7 @@ async function runSession({ name, command, args, prompts, sequence, outDir, env 
   };
 
   const child = spawn(command, args, {
-    cwd: root,
+    cwd,
     env: { ...process.env, ...env },
     stdio: ["pipe", "pipe", "pipe"],
   });
@@ -170,6 +193,10 @@ async function runSession({ name, command, args, prompts, sequence, outDir, env 
           const obj = JSON.parse(line);
           parsed.push(obj);
           recordTimeline("event", { type: obj.type, subtype: obj.subtype });
+          if (obj.type === "control_request") {
+            controlRequests.push(obj);
+            recordTimeline("control_request_received", { subtype: obj.request?.subtype, request_id: obj.request_id });
+          }
           if (obj.type === "result") {
             results++;
             recordTimeline("result", { subtype: obj.subtype, exit_code: obj.exit_code });
@@ -202,7 +229,28 @@ async function runSession({ name, command, args, prompts, sequence, outDir, env 
           writeUserMessage(child.stdin, step.content);
         } else if (step.type === "control_request") {
           recordTimeline("send_control", { subtype: step.subtype });
-          writeControlRequest(child.stdin, step.subtype);
+          writeControlRequest(child.stdin, step.subtype, step.request ?? {});
+        } else if (step.type === "wait_control_request") {
+          recordTimeline("wait_control_request_start");
+          const waitMs = step.timeoutMs ?? 30_000;
+          await new Promise((resolve) => {
+            const check = () => {
+              if (controlRequests.length > answeredControlRequests || settled) { clearInterval(interval); resolve(); }
+            };
+            const interval = setInterval(check, 50);
+            setTimeout(() => { clearInterval(interval); resolve(); }, waitMs);
+            check();
+          });
+          recordTimeline("wait_control_request_end", { received: controlRequests.length });
+        } else if (step.type === "control_response") {
+          const pending = controlRequests[answeredControlRequests];
+          if (pending) {
+            answeredControlRequests++;
+            recordTimeline("send_control_response", { behavior: step.behavior, request_id: pending.request_id });
+            writeControlResponse(child.stdin, pending, step.behavior ?? "allow", step.message);
+          } else {
+            recordTimeline("control_response_skipped_no_pending_request");
+          }
         } else if (step.type === "signal") {
           recordTimeline("send_signal", { signal: step.signal });
           child.kill(step.signal);
@@ -321,21 +369,58 @@ async function main() {
   const clarpCmd = parseCommand(argValue("--clarp", clarpDefault));
   const commonArgs = ["-p", "--model", model, "--input-format", "stream-json", "--output-format", "stream-json", "--verbose"];
 
+  const nativeVersion = await new Promise(resolveVersion => {
+    try {
+      const probe = spawn(nativeCmd[0], [...nativeCmd.slice(1), "--version"]);
+      let out = "";
+      probe.stdout.on("data", chunk => { out += chunk; });
+      probe.on("exit", () => resolveVersion(out.trim() || "unknown"));
+      probe.on("error", () => resolveVersion("unknown"));
+    } catch {
+      resolveVersion("unknown");
+    }
+  });
+
+  // --native-replay <dir>: instead of spawning the native CLI (metered after
+  // 2026-06-15), load its recorded summaries from a prior --native-only golden
+  // capture and diff a fresh clarp run against them.
+  const replayDir = argValue("--native-replay");
+  let replayReport = null;
+  if (replayDir) {
+    replayReport = JSON.parse(await readFile(resolve(replayDir, "report.json"), "utf8"));
+  }
+
   const report = {
     model,
+    captured_at: new Date().toISOString(),
+    native_version: replayDir ? `replay:${replayReport.native_version ?? "unknown"}` : nativeVersion,
     out_dir: outDir,
+    ...(replayDir ? { replay_from: resolve(replayDir) } : {}),
     cases: {},
   };
 
   for (const testCase of cases) {
     const caseDir = cases.length === 1 ? outDir : resolve(outDir, safeName(testCase.name));
     await mkdir(caseDir, { recursive: true });
-    const args = [...commonArgs, ...testCase.args];
+    const args = testCase.replaceArgs ? [...testCase.args] : [...commonArgs, ...testCase.args];
     const sessionOpts = testCase.sequence
       ? { sequence: testCase.sequence }
       : { prompts: testCase.prompts };
+    if (testCase.cwd) {
+      const caseCwd = resolve(root, testCase.cwd);
+      await mkdir(caseCwd, { recursive: true });
+      sessionOpts.cwd = caseCwd;
+    }
     const runs = [];
-    if (!hasArg("--clarp-only")) {
+    let replayedNativeSummary = null;
+    if (replayDir) {
+      const savedCase = replayReport.cases?.[testCase.name];
+      if (savedCase?.runs?.native) {
+        replayedNativeSummary = savedCase.runs.native;
+      } else {
+        process.stderr.write(`warning: no saved native run for case ${testCase.name} in ${replayDir}\n`);
+      }
+    } else if (!hasArg("--clarp-only")) {
       runs.push(await runSession({
         name: "native",
         command: nativeCmd[0],
@@ -365,6 +450,9 @@ async function main() {
       out_dir: caseDir,
       runs: Object.fromEntries(runs.map(run => [run.name, summarize(run)])),
     };
+    if (replayedNativeSummary) {
+      caseReport.runs.native = replayedNativeSummary;
+    }
     if (runs.length > 0 && runs[0].timeline) {
       caseReport.timelines = Object.fromEntries(runs.map(run => [run.name, run.timeline ?? []]));
     }

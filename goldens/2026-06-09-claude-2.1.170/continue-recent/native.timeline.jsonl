@@ -1,0 +1,17 @@
+{"t":2,"action":"sequence_start","steps":3}
+{"t":2,"action":"send_prompt","index":0,"content":"Reply with exactly: CONTINUED"}
+{"t":2,"action":"wait_result_start"}
+{"t":978,"action":"event","type":"system","subtype":"init"}
+{"t":2261,"action":"event","type":"system","subtype":"thinking_tokens"}
+{"t":2428,"action":"event","type":"system","subtype":"thinking_tokens"}
+{"t":2428,"action":"event","type":"system","subtype":"thinking_tokens"}
+{"t":2433,"action":"event","type":"assistant"}
+{"t":2433,"action":"event","type":"assistant"}
+{"t":2507,"action":"event","type":"rate_limit_event"}
+{"t":2524,"action":"event","type":"system","subtype":"notification"}
+{"t":2525,"action":"event","type":"result","subtype":"success"}
+{"t":2525,"action":"result","subtype":"success"}
+{"t":2540,"action":"wait_result_end","results":1}
+{"t":2540,"action":"close_stdin"}
+{"t":2540,"action":"sequence_done_closing_stdin"}
+{"t":3036,"action":"exit","code":0,"signal":null}

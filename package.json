@@ -27,6 +27,8 @@
     "prepublishOnly": "npm test && npm run build && npm pack --dry-run",
     "parity:stream": "npm run build && node scripts/parity-stream.mjs",
     "parity:interrupt": "npm run build && node scripts/parity-stream.mjs --cases scripts/cases-interrupt.json --timeout-ms 120000",
+    "parity:golden-capture": "node scripts/parity-stream.mjs --native-only --cases scripts/cases-goldens.json --timeout-ms 240000",
+    "parity:replay": "npm run build && node scripts/parity-stream.mjs --cases scripts/cases-goldens.json --native-replay goldens/2026-06-09-claude-2.1.170 --timeout-ms 240000",
     "probe:pty-interrupt": "node scripts/pty-interrupt-probe.mjs",
     "start": "node dist/cli.js",
     "test": "vitest run",
