@@ -614,9 +614,9 @@ describe("interrupt transaction", () => {
     await Promise.resolve();
 
     const response = parsedLines().find(l => l.type === "control_response");
+    // Native nests request_id inside `response` (control-protocol-misc golden).
     expect(response).toMatchObject({
-      request_id: "int-123",
-      response: { subtype: "success" },
+      response: { subtype: "success", request_id: "int-123" },
     });
   });
 
@@ -638,8 +638,7 @@ describe("interrupt transaction", () => {
 
     expect(ptyHandle.writes).not.toContain("\x1b");
     expect(parsedLines().find(l => l.type === "control_response")).toMatchObject({
-      request_id: "int-dispatch",
-      response: { subtype: "success" },
+      response: { subtype: "success", request_id: "int-dispatch" },
     });
 
     fireStatus("busy");
@@ -1119,8 +1118,10 @@ describe("handleObservation", () => {
     });
 
     const result = parsedLines().find(l => l.type === "result");
+    // Native parity (invalid-model golden): subtype "success" with
+    // is_error: true, not subtype "error".
     expect(result).toMatchObject({
-      subtype: "error",
+      subtype: "success",
       is_error: true,
       api_error_status: 404,
       stop_reason: "api_error",
@@ -1153,7 +1154,8 @@ describe("handleObservation", () => {
       const results = parsedLines().filter(l => l.type === "result");
       expect(results).toHaveLength(1);
       expect(results[0]).toMatchObject({
-        subtype: "error",
+        subtype: "success",
+        is_error: true,
         result: "There's an issue with the selected model.",
       });
       expect(ptyHandle.kills).toContain("SIGTERM");
@@ -1183,7 +1185,8 @@ describe("handleObservation", () => {
 
     const result = parsedLines().find(l => l.type === "result");
     expect(result).toMatchObject({
-      subtype: "error",
+      subtype: "success",
+      is_error: true,
       api_error_status: 529,
       result: "API Error: 529 Overloaded.",
     });
@@ -1716,5 +1719,135 @@ describe("prompt dispatch deadline", () => {
     fireStatus("waiting", "approve Bash");
     await vi.advanceTimersByTimeAsync(25_000);
     expect(sends(ptyHandle)).toBe(1);
+  });
+});
+
+// ---- Tier-2 parity: max-turns, control acks ----
+
+describe("native parity shapes", () => {
+  beforeEach(() => {
+    written = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk: any) => {
+      written.push(typeof chunk === "string" ? chunk : chunk.toString());
+      return true;
+    });
+    vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    output.configureOutput({ format: "stream-json", verbose: true, includePartial: true });
+    output.resetOutputState();
+  });
+  afterEach(() => { vi.restoreAllMocks(); });
+
+  it("ends the session with result.error_max_turns and exit 1 when --max-turns is exhausted", async () => {
+    const { controller, fireStatus, exitCodes } = createTestController({
+      args: { inputFormat: "stream-json", maxTurns: 1 },
+    });
+    await controller.start();
+
+    // Turn 1 completes normally.
+    fireStatus("busy");
+    fireStatus("idle");
+    // Turn 2 exceeds the limit: clarp interrupts it, then must report
+    // error_max_turns (native: is_error, NO result field, exit code 1).
+    fireStatus("busy");
+    await Promise.resolve();
+    await Promise.resolve();
+    fireStatus("idle");
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const results = parsedLines().filter(l => l.type === "result");
+    const maxTurns = results.find(r => r.subtype === "error_max_turns");
+    expect(maxTurns).toBeDefined();
+    expect(maxTurns.is_error).toBe(true);
+    expect("result" in maxTurns).toBe(false);
+
+    controller.handleClaudeExit(143);
+    await Promise.resolve();
+    expect(exitCodes).toEqual([1]);
+  });
+
+  it("acks initialize with the native nested control_response shape", () => {
+    const { controller } = createTestController({ args: { inputFormat: "stream-json" } });
+    controller.handleControlRequest({ subtype: "initialize" }, "init-1");
+
+    const ack = parsedLines().find(l => l.type === "control_response");
+    expect(ack).toBeDefined();
+    expect(ack.response.subtype).toBe("success");
+    expect(ack.response.request_id).toBe("init-1");
+    expect(Array.isArray(ack.response.response.commands)).toBe(true);
+    expect(typeof ack.response.response.pid).toBe("number");
+  });
+
+  it("acks set_permission_mode echoing the mode like native", () => {
+    const { controller } = createTestController({ args: { inputFormat: "stream-json" } });
+    controller.handleControlRequest({ subtype: "set_permission_mode", mode: "acceptEdits" }, "perm-1");
+
+    const ack = parsedLines().find(l => l.type === "control_response");
+    expect(ack).toMatchObject({
+      response: { subtype: "success", request_id: "perm-1", response: { mode: "acceptEdits" } },
+    });
+  });
+
+  it("counts assistant API rounds (not prompts) toward --max-turns like native", async () => {
+    // Native's --max-turns unit is assistant API rounds inside the agentic
+    // loop: one prompt that chains tool calls can exhaust it (golden:
+    // 1 user prompt, num_turns=2). clarp observes rounds as SSE message_start.
+    const { controller, fireStatus, backend, exitCodes } = createTestController({
+      args: { inputFormat: "stream-json", maxTurns: 1 },
+    });
+    await controller.start();
+
+    fireStatus("busy");
+    const round = (id: string) => backend.emit({
+      kind: "sse",
+      event: { data: "{}", parsed: { type: "message_start", message: { id, model: "m", content: [] } } },
+    });
+    round("msg_1");
+    await Promise.resolve();
+    expect(parsedLines().filter(l => l.type === "result")).toHaveLength(0);
+
+    // Second round inside the same prompt-turn exceeds the limit.
+    round("msg_2");
+    await Promise.resolve();
+    await Promise.resolve();
+    fireStatus("idle");
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const results = parsedLines().filter(l => l.type === "result");
+    expect(results).toHaveLength(1);
+    expect(results[0].subtype).toBe("error_max_turns");
+    expect(results[0].is_error).toBe(true);
+    expect(results[0].num_turns).toBe(2);
+    expect("result" in results[0]).toBe(false);
+
+    controller.handleClaudeExit(143);
+    await Promise.resolve();
+    expect(exitCodes).toEqual([1]);
+  });
+
+  it("exits 1 after an is_error result even when the session ends by stdin drain", async () => {
+    const { controller, fireStatus, exitCodes } = createTestController({
+      args: { inputFormat: "stream-json" },
+    });
+    await controller.start();
+    fireStatus("busy");
+    // Turn fails with a backend API error (invalid-model family).
+    controller.handleObservation({
+      kind: "transcript_line",
+      line: {
+        type: "assistant",
+        isApiErrorMessage: true,
+        apiErrorStatus: 404,
+        message: { content: [{ type: "text", text: "model problem" }] },
+      },
+    });
+    controller.handleStdinEof();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    controller.handleClaudeExit(143);
+    await Promise.resolve();
+    expect(exitCodes).toEqual([1]);
   });
 });

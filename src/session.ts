@@ -135,6 +135,13 @@ export class SessionController {
   private dispatchDeadlineTimer: ReturnType<typeof setTimeout> | null = null;
   private dispatchRetried = false;
   private turnInterrupted = false;
+  private maxTurnsExceeded = false;
+  // Assistant API rounds observed over SSE (message_start events) — native's
+  // --max-turns / num_turns unit.
+  private apiRoundCount = 0;
+  // Whether the most recent terminal result carried is_error — native exits 1
+  // after an error result even when the session ends by stdin drain.
+  private lastResultIsError = false;
   private prefixNextPromptWithInterruptedMarker = false;
   private interruptedOnlyExitCode: number | null = null;
   private readonly startedAt = Date.now();
@@ -189,6 +196,12 @@ export class SessionController {
   handleObservation(obs: Observation): void {
     if (this.processExited) return;
     if (obs.kind === "sse") {
+      // Native's --max-turns counts assistant API rounds inside the agentic
+      // loop (one per message_start), not user prompts — a single prompt that
+      // chains tools can exhaust it.
+      if ((obs.event.parsed as Record<string, unknown> | undefined)?.type === "message_start") {
+        this.handleAssistantRoundStarted();
+      }
       output.emitSSE(obs.event);
     } else if (obs.kind === "transcript_line") {
       this.handleTranscriptLine(obs.line);
@@ -247,13 +260,10 @@ export class SessionController {
         this.emitInitFromTranscriptOrFallback();
       }
 
+      // Fallback for backends without SSE observation: prompt-turns can only
+      // undercount API rounds, so this can't fire early.
       if (this.opts.args.maxTurns && this.turnCount > this.opts.args.maxTurns) {
-        this.log(`Max turns (${this.opts.args.maxTurns}) reached`);
-        this.opQueue.enqueue({
-          type: "interrupt",
-          reason: "max_turns",
-          emitControlResponse: false,
-        });
+        this.triggerMaxTurnsExceeded();
       }
 
       this.sendPendingDispatchInterrupt("pid_busy");
@@ -324,6 +334,27 @@ export class SessionController {
         requestId,
         emitControlResponse: true,
       });
+    } else if (req.subtype === "initialize") {
+      // Native answers with a capabilities payload (commands, models, account,
+      // ...). clarp acks with what it can truthfully report from the observed
+      // session — SDK clients block on the ack itself to finish their handshake.
+      this.log("Initialize handshake");
+      const init = this.pidWatcher.readTranscriptInit();
+      const slashCommands = Array.isArray(init?.slash_commands)
+        ? (init.slash_commands as unknown[]).filter((c): c is string => typeof c === "string")
+        : [];
+      output.emitControlResponseSuccess(requestId, {
+        commands: slashCommands.map((name) => ({ name })),
+        output_style: typeof init?.output_style === "string" ? init.output_style : "default",
+        pid: this.opts.pid,
+      });
+    } else if (req.subtype === "set_permission_mode") {
+      // Acked for protocol parity so clients don't wedge on the handshake.
+      // clarp cannot reach into the TUI to change the mode; permission
+      // decisions still flow through the can_use_tool protocol / auto-deny.
+      const mode = typeof req.mode === "string" ? req.mode : "default";
+      this.log(`Set permission mode: ${mode}`);
+      output.emitControlResponseSuccess(requestId, { mode });
     }
   }
 
@@ -379,6 +410,28 @@ export class SessionController {
       }
     }
     this.requestCleanup(this.shuttingDown ? this.shutdownExitCode : 0);
+  }
+
+  private handleAssistantRoundStarted(): void {
+    this.apiRoundCount++;
+    if (
+      this.opts.args.maxTurns &&
+      this.apiRoundCount > this.opts.args.maxTurns &&
+      !this.maxTurnsExceeded
+    ) {
+      this.triggerMaxTurnsExceeded();
+    }
+  }
+
+  private triggerMaxTurnsExceeded(): void {
+    if (this.maxTurnsExceeded) return;
+    this.log(`Max turns (${this.opts.args.maxTurns}) exceeded`);
+    this.maxTurnsExceeded = true;
+    this.opQueue.enqueue({
+      type: "interrupt",
+      reason: "max_turns",
+      emitControlResponse: false,
+    });
   }
 
   /**
@@ -917,6 +970,13 @@ export class SessionController {
       this.completeTurnWithError(this.transcriptTurnError.message, this.transcriptTurnError.status, durationMs);
       return;
     }
+
+    if (this.maxTurnsExceeded) {
+      // The turn finished before the max-turns interrupt landed; it must still
+      // report error_max_turns, not success.
+      this.completeMaxTurnsExceededTurn(durationMs);
+      return;
+    }
     this.interruptedOnlyExitCode = null;
 
     if (!this.opts.backend.capabilities.emitsPostTurnSummary) {
@@ -937,6 +997,7 @@ export class SessionController {
       }
     }
 
+    this.lastResultIsError = false;
     if (!this.opts.backend.capabilities.emitsResults) {
       output.emitResult("success", text, { durationMs, numTurns: this.turnCount });
     }
@@ -952,9 +1013,37 @@ export class SessionController {
     this.maybeShutdownAfterInputDrained();
   }
 
+  /**
+   * Native parity: --max-turns exhaustion ends the session with a
+   * result.error_max_turns (is_error, no `result` field, num_turns = assistant
+   * API rounds) and exit code 1, even in stream-json mode — it does not keep
+   * serving prompts.
+   */
+  private completeMaxTurnsExceededTurn(durationMs: number): void {
+    this.turnInterrupted = false;
+    this.transcriptTurnError = null;
+    this.lastResultIsError = true;
+    if (!this.opts.backend.capabilities.emitsResults) {
+      output.emitResult("error_max_turns", null, {
+        durationMs,
+        numTurns: this.apiRoundCount || this.turnCount,
+        stopReason: null,
+      });
+    }
+    output.resetAccumulatedText();
+    this.log("Max turns exceeded, exiting");
+    this.requestShutdown(1);
+  }
+
   private completeInterruptedTurn(durationMs: number): void {
     this.turnInterrupted = false;
     this.transcriptTurnError = null;
+
+    if (this.maxTurnsExceeded) {
+      this.completeMaxTurnsExceededTurn(durationMs);
+      return;
+    }
+
     output.emitInterruptedUserMessage();
 
     if (!this.opts.backend.capabilities.emitsResults) {
@@ -1052,6 +1141,7 @@ export class SessionController {
 
   private completeTurnWithError(message: string, status?: number, durationMs?: number): void {
     this.transcriptTurnError = null;
+    this.lastResultIsError = true;
 
     if (!this.opts.backend.capabilities.emitsPostTurnSummary) {
       output.emitPostTurnSummary({
@@ -1066,11 +1156,15 @@ export class SessionController {
     }
 
     if (!this.opts.backend.capabilities.emitsResults) {
-      output.emitResult("error", message, {
+      // Native parity (invalid-model golden): a turn that ends on a backend
+      // API error is reported as subtype "success" with is_error: true and the
+      // explanatory text as the result — not subtype "error".
+      output.emitResult("success", message, {
         durationMs,
         numTurns: this.turnCount,
         stopReason: "api_error",
         apiErrorStatus: status,
+        isError: true,
       });
     }
     output.resetAccumulatedText();
@@ -1094,7 +1188,9 @@ export class SessionController {
       this.opQueue.length > 0
     ) return;
     this.log("stdin closed and queue empty, exiting");
-    this.requestShutdown(this.interruptedOnlyExitCode ?? 0);
+    // Native exits non-zero when the session's last result was an error
+    // (e.g. invalid model), even though the stream ended normally.
+    this.requestShutdown(this.interruptedOnlyExitCode ?? (this.lastResultIsError ? 1 : 0));
   }
 
   private emitInitFromTranscriptOrFallback(): void {

@@ -305,15 +305,20 @@ export function emitControlRequest(requestId: string, toolName: string, toolUseI
 }
 
 /**
- * Emits the immediate success acknowledgement native claude -p writes for
- * accepted control requests such as interrupt.
+ * Emits the success acknowledgement native claude -p writes for accepted
+ * control requests (interrupt, initialize, set_permission_mode, ...).
+ * Native nests request_id and any payload inside `response`:
+ *   {type, response: {subtype: "success", request_id, response: {...}}}
  */
-export function emitControlResponseSuccess(requestId?: string): void {
+export function emitControlResponseSuccess(requestId?: string, payload?: Record<string, unknown>): void {
   if (format !== "stream-json") return;
   writeLine({
     type: "control_response",
-    ...(requestId ? { request_id: requestId } : {}),
-    response: { subtype: "success" },
+    response: {
+      subtype: "success",
+      ...(requestId ? { request_id: requestId } : {}),
+      ...(payload ? { response: payload } : {}),
+    },
   });
 }
 
@@ -352,8 +357,8 @@ export function emitPostTurnSummary(opts: {
  * Emits the final result for a turn or process exit.
  */
 export function emitResult(
-  subtype: "success" | "error" | "error_during_execution",
-  result: string,
+  subtype: "success" | "error" | "error_during_execution" | "error_max_turns",
+  result: string | null,
   meta?: {
     costUsd?: number;
     durationMs?: number;
@@ -362,10 +367,17 @@ export function emitResult(
     apiErrorStatus?: number;
     terminalReason?: string;
     errors?: string[];
+    // Native decouples is_error from subtype: e.g. an invalid model yields
+    // subtype "success" with is_error true. Default keeps the subtype-derived
+    // value for callers that don't care.
+    isError?: boolean;
   },
 ): void {
   const msg: Record<string, unknown> = {
-    type: "result", subtype, result, is_error: subtype !== "success",
+    type: "result", subtype,
+    // Native omits the `result` field entirely for error_max_turns.
+    ...(result !== null ? { result } : {}),
+    is_error: meta?.isError ?? subtype !== "success",
     session_id: sessionId,
     ...(meta?.costUsd != null ? { cost_usd: meta.costUsd } : {}),
     ...(meta?.durationMs != null ? { duration_ms: meta.durationMs } : {}),
@@ -376,7 +388,7 @@ export function emitResult(
     ...(meta?.errors ? { errors: meta.errors } : {}),
   };
   if (format === "text") {
-    process.stdout.write(result.endsWith("\n") ? result : result + "\n");
+    if (result) process.stdout.write(result.endsWith("\n") ? result : result + "\n");
   } else {
     writeLine(msg);
   }
