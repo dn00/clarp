@@ -231,26 +231,60 @@ describe("createProxy upstream failure handling", () => {
       upstream.url,
     );
 
-    // Collect whatever arrives until the connection dies.
-    const received = await new Promise<string>((resolve, reject) => {
+    // Collect whatever arrives and record HOW the stream terminated — a clean
+    // `end` would mean the proxy gracefully closed (wrong); severance must
+    // surface as `aborted`/`error` (the socket dying under the client).
+    const outcome = await new Promise<{ body: string; terminal: string }>((resolve, reject) => {
       const req = http.request(
         { hostname: "127.0.0.1", port, path: "/v1/messages", method: "POST" },
         (res) => {
           const chunks: Buffer[] = [];
           res.on("data", (c: Buffer) => chunks.push(c));
-          res.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
-          res.on("error", () => resolve(Buffer.concat(chunks).toString("utf8")));
-          res.on("aborted", () => resolve(Buffer.concat(chunks).toString("utf8")));
+          const done = (terminal: string) => resolve({ body: Buffer.concat(chunks).toString("utf8"), terminal });
+          res.on("end", () => done("end"));
+          res.on("error", () => done("error"));
+          res.on("aborted", () => done("aborted"));
         },
       );
       req.on("error", reject);
       req.end("{}");
-    }).catch(() => "request-errored-before-headers");
+    }).catch(() => ({ body: "request-errored-before-headers", terminal: "pre-headers" }));
 
     // Claude received exactly the upstream bytes — no appended JSON blob.
-    expect(received === ssePart || received === "request-errored-before-headers").toBe(true);
-    expect(received).not.toContain("proxy_error");
+    expect(outcome.body === ssePart || outcome.body === "request-errored-before-headers").toBe(true);
+    expect(outcome.body).not.toContain("proxy_error");
+    // The connection was severed, not gracefully ended after the partial SSE.
+    expect(outcome.terminal).not.toBe("end");
     expect(errors.length).toBeGreaterThan(0);
+  });
+
+  it("decodes observed SSE through a persistent decoder when UTF-8 splits across chunks", async () => {
+    // A grinning-face emoji (U+1F600 → F0 9F 98 80) deliberately split so the
+    // first network chunk ends mid-character. Naive per-chunk toString("utf8")
+    // would yield replacement chars in clarp's observed stream.
+    const line = Buffer.from('event: x\ndata: {"text":"😀"}\n\n', "utf8");
+    const splitAt = line.indexOf(0xf0) + 2; // 2 of the emoji's 4 bytes
+    const upstream = await startFakeUpstream((_req, res) => {
+      res.writeHead(200, { "Content-Type": "text/event-stream" });
+      res.write(line.subarray(0, splitAt));
+      setTimeout(() => {
+        res.write(line.subarray(splitAt));
+        res.end();
+      }, 10);
+    });
+    cleanups.push(upstream.close);
+
+    const observed: string[] = [];
+    const port = await startTestProxy(
+      makeCallbacks({ onSSEEvent: (evt) => observed.push(evt.data) }),
+      upstream.url,
+    );
+
+    await postToProxy(port, "/v1/messages", JSON.stringify({ model: "m", stream: true, messages: [] }));
+
+    expect(observed).toHaveLength(1);
+    expect(JSON.parse(observed[0]!).text).toBe("😀");
+    expect(observed[0]).not.toContain("�");
   });
 
   it("does not warn about non-SSE responses unless the request asked to stream", async () => {

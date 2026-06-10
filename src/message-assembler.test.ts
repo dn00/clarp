@@ -197,6 +197,22 @@ describe("MessageAssembler", () => {
     expect(msgs[0]!.content[0]).toEqual({ type: "redacted_thinking", data: "opaque-bytes" });
   });
 
+  it("does not JSON-parse a raw block's literal string input when no deltas arrived", () => {
+    const msgs = collect([
+      sse({ type: "message_start", message: { id: "msg_u2b", model: "claude-opus-4-7", content: [] } }),
+      // A future/raw block whose `input` is a genuine string value, not an
+      // accumulated input_json_delta. It must pass through verbatim.
+      sse({ type: "content_block_start", index: 0, content_block: { type: "future_block", input: '"abc"' } }),
+      sse({ type: "content_block_stop", index: 0 }),
+      sse({ type: "message_stop" }),
+    ]);
+
+    expect(msgs).toHaveLength(1);
+    const block = msgs[0]!.content[0] as unknown as Record<string, unknown>;
+    expect(block.type).toBe("future_block");
+    expect(block.input).toBe('"abc"');
+  });
+
   it("does not let deltas for an unknown block corrupt the previous block", () => {
     const msgs = collect([
       sse({ type: "message_start", message: { id: "msg_u3", model: "claude-opus-4-7", content: [] } }),
