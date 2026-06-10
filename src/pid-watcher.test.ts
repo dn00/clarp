@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { PidWatcher, type PidFileData } from "./pid-watcher.js";
+import { PidWatcher, getParentPid, type PidFileData } from "./pid-watcher.js";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
@@ -211,17 +211,6 @@ describe("PidWatcher session discovery (wrapper-pid case)", () => {
     expect(watcher.getSessionId()).toBeNull();
   });
 
-  it("adopts the newest matching session when several share the cwd", () => {
-    writeSession(REAL_PID, { cwd: "/work/project", sessionId: "newer", updatedAt: startedAt + 5000 });
-    // An older but still-fresh sibling in the same cwd (use this pid too — both alive).
-    fs.writeFileSync(
-      path.join(sessionsDir, "older.json"),
-      JSON.stringify({ pid: REAL_PID, sessionId: "older", cwd: "/work/project", kind: "interactive", updatedAt: startedAt + 1000 }),
-    );
-    const watcher = makeWatcher("/work/project");
-    expect(watcher.getSessionId()).toBe("newer");
-  });
-
   it("reports status changes from the discovered file via polling", () => {
     vi.useFakeTimers();
     try {
@@ -249,5 +238,71 @@ describe("PidWatcher session discovery (wrapper-pid case)", () => {
     writeSession(REAL_PID, { cwd: "C:\\Work\\Project", sessionId: "win" });
     const watcher = makeWatcher("c:/work/project");
     expect(watcher.getSessionId()).toBe("win");
+  });
+});
+
+// When two clarp runs launch Claude from the same cwd through a wrapper, both
+// scan the shared sessions directory. PidWatcher must adopt only the session
+// whose process descends from the wrapper IT launched, and refuse rather than
+// guess if ancestry can't disambiguate.
+describe("PidWatcher concurrent same-cwd disambiguation", () => {
+  const WRAPPER_PID = 500;
+  let tmpDir: string;
+  let sessionsDir: string;
+  let startedAt: number;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "pid-concurrent-test-"));
+    sessionsDir = path.join(tmpDir, ".claude", "sessions");
+    fs.mkdirSync(sessionsDir, { recursive: true });
+    startedAt = Date.now();
+  });
+  afterEach(() => { fs.rmSync(tmpDir, { recursive: true, force: true }); });
+
+  function writeSession(pid: number, sessionId: string, when: number): void {
+    fs.writeFileSync(
+      path.join(sessionsDir, `${pid}.json`),
+      JSON.stringify({ pid, sessionId, cwd: "/shared/dir", kind: "interactive", updatedAt: when }),
+    );
+  }
+
+  // Wrapper 500 -> our Claude 1001; the other run is wrapper 600 -> Claude 1002.
+  const parents: Record<number, number> = { 1001: 500, 1002: 600 };
+
+  function makeWatcher(): PidWatcher {
+    return new PidWatcher(WRAPPER_PID, { onStatusChange: () => {} }, tmpDir, {
+      cwd: "/shared/dir",
+      startedAt,
+      isPidAlive: () => true,
+      getParentPid: (pid) => parents[pid] ?? null,
+    });
+  }
+
+  it("adopts the session descended from our wrapper, not the concurrent run's", () => {
+    writeSession(1002, "theirs", startedAt + 2000); // newer, but not ours
+    writeSession(1001, "ours", startedAt + 1000);
+    expect(makeWatcher().getSessionId()).toBe("ours");
+  });
+
+  it("refuses to adopt when no candidate descends from our wrapper", () => {
+    writeSession(1002, "theirs", startedAt + 1000); // descends from 600, not 500
+    fs.writeFileSync(
+      path.join(sessionsDir, "9003.json"),
+      JSON.stringify({ pid: 9003, sessionId: "alsotheirs", cwd: "/shared/dir", kind: "interactive", updatedAt: startedAt + 1500 }),
+    );
+    expect(makeWatcher().getSessionId()).toBeNull();
+  });
+});
+
+describe("getParentPid", () => {
+  it("resolves the current process's parent on this platform", () => {
+    // Verifies the real platform implementation (incl. Windows PowerShell) on
+    // each CI OS without needing concurrent spawns.
+    expect(getParentPid(process.pid)).toBe(process.ppid);
+  });
+
+  it("returns null for an invalid pid", () => {
+    expect(getParentPid(0)).toBeNull();
+    expect(getParentPid(-1)).toBeNull();
   });
 });
