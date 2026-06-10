@@ -74,6 +74,50 @@ the golden `native.stdout.jsonl` files — read those, not memory, when fixing.
 - Known intentional clarp extras (keep): `system.session_state_changed`,
   `system.post_turn_summary`, `system.api_retry`, busy/idle status.
 
+## Live replay findings (npm run parity:replay, 2026-06-09)
+
+Found by running clarp through the golden case matrix and diffing against the
+recorded native summaries (replay run: `.parity-runs/2026-06-10T06-19-26.162Z`).
+
+11. **Permission flow wedges clarp (worst finding).** All three permission
+    cases ended in SIGTERM (exit 143). Two distinct bugs:
+    a. *Late forwarding:* native surfaces `can_use_tool` ~3s after the Write
+       attempt; under clarp the TUI retried the tool three times
+       (thinking+tool_use ×3) before clarp emitted the `control_request` at
+       ~100s. Whatever clarp keys its permission detection on is slow or
+       missing the first attempts.
+    b. *No exit on EOF with pending permission:* after stdin closes while a
+       `can_use_tool` request is outstanding, clarp never exits — hangs until
+       killed. Native exits promptly when stdin closes.
+
+12. **No `user` tool_result events.** Native emits a `user` event carrying
+    `tool_use_result` after every tool execution; clarp emitted zero across
+    all tool cases. SDK-style consumers watching tool results see nothing.
+
+13. **`can_use_tool` over-emission.** Native only emits permission
+    control_requests when started with `--permission-prompt-tool stdio`;
+    clarp emits them unconditionally (saw one in the no-flag case).
+
+14. **Missing control acks.** Native answers `initialize` (with a rich
+    capabilities payload — commands list, etc.) and `set_permission_mode`
+    (`{"mode": ...}`) with `control_response` events; clarp answered neither.
+
+15. **`--max-turns` not enforced.** Native stops after N turns with
+    `result.error_max_turns` (exit 1); clarp kept going (4 extra assistant
+    events) and reported `result.success` (exit 0).
+
+16. **Invalid model divergence.** Native reports a *success* result whose
+    text explains the model problem; clarp reports `result.error`.
+
+17. **`stream_event` undercount.** With `--include-partial-messages`, clarp
+    emitted 4 fewer `stream_event`s than native across two prompts —
+    likely missing event kinds at stream boundaries, worth a per-event diff.
+
+WebSearch's `assistant_count_delta: +21` is mostly explained by clarp's
+per-content-block message emission against the TUI's many search rounds —
+re-examine after #12 lands, since the missing tool_result framing distorts
+the comparison.
+
 ## How these were found
 
 Single pass over the golden field-shape inventory:

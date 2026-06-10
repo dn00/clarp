@@ -220,7 +220,7 @@
     "name": "session-id-fixed",
     "args": [
       "--session-id",
-      "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeee0001"
+      "{{run-session-id}}"
     ],
     "sequence": [
       {
@@ -240,7 +240,7 @@
     "name": "resume-fixed",
     "args": [
       "--resume",
-      "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeee0001"
+      "{{run-session-id}}"
     ],
     "sequence": [
       {
