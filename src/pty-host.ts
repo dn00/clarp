@@ -64,13 +64,19 @@ export function ensureNodePtySpawnHelperExecutable(helperPath = getNodePtySpawnH
 
 function findClaude(): string {
   if (os.platform() === "win32") {
-    try {
-      return execSync("where claude.cmd", { encoding: "utf8" }).trim().split("\n")[0]!;
-    } catch {
-      throw new Error(
-        "claude not found. Install Claude Code first: https://docs.anthropic.com/en/docs/claude-code"
-      );
+    // npm install gives claude.cmd; the native installer ships claude.exe; a
+    // bare `claude` covers anything else on PATH.
+    for (const name of ["claude.cmd", "claude.exe", "claude"]) {
+      try {
+        const found = execSync(`where ${name}`, { encoding: "utf8" }).trim().split(/\r?\n/)[0];
+        if (found) return found;
+      } catch {
+        // Not found under this name; try the next.
+      }
     }
+    throw new Error(
+      "claude not found. Install Claude Code first: https://docs.anthropic.com/en/docs/claude-code"
+    );
   }
   try {
     return execSync("which claude", { encoding: "utf8" }).trim();
