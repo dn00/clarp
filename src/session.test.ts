@@ -44,6 +44,7 @@ const defaultArgs: Args = {
   replayUserMessages: false,
   maxTurns: null,
   maxBudgetUsd: null,
+  permissionPromptTool: null,
   prompt: null,
   readPromptFromStdin: false,
   claudeArgs: [],
@@ -215,6 +216,7 @@ function createTestController(overrides?: {
     replayUserMessages: false,
     maxTurns: null,
     maxBudgetUsd: null,
+    permissionPromptTool: null,
     prompt: "hello",
     readPromptFromStdin: false,
     claudeArgs: [],
@@ -800,8 +802,12 @@ describe("permission forwarding", () => {
     for (const e of events) output.emitSSE({ data: JSON.stringify(e), parsed: e });
   }
 
+  // Native only forwards can_use_tool when started with
+  // --permission-prompt-tool stdio over stream-json input.
+  const permissionArgs = { inputFormat: "stream-json" as const, permissionPromptTool: "stdio" };
+
   it("emits control_request when waiting with tool info", () => {
-    const { fireStatus } = createTestController();
+    const { fireStatus } = createTestController({ args: permissionArgs });
     simulateToolUse();
     fireStatus("waiting", "approve Bash");
 
@@ -814,7 +820,7 @@ describe("permission forwarding", () => {
   });
 
   it("allow response sends CR to PTY", async () => {
-    const { controller, fireStatus, ptyHandle } = createTestController();
+    const { controller, fireStatus, ptyHandle } = createTestController({ args: permissionArgs });
     await controller.start();
     simulateToolUse();
     fireStatus("waiting", "approve Bash");
@@ -827,7 +833,7 @@ describe("permission forwarding", () => {
   });
 
   it("deny response sends ESC to PTY", async () => {
-    const { controller, fireStatus, ptyHandle } = createTestController();
+    const { controller, fireStatus, ptyHandle } = createTestController({ args: permissionArgs });
     await controller.start();
     simulateToolUse();
     fireStatus("waiting", "approve Bash");
@@ -840,13 +846,13 @@ describe("permission forwarding", () => {
   });
 
   it("mismatched request_id is ignored", () => {
-    const { controller, ptyHandle } = createTestController();
+    const { controller, ptyHandle } = createTestController({ args: permissionArgs });
     controller.handleControlResponse({ behavior: "allow" }, "wrong-id");
     expect(ptyHandle.writes.filter(w => w === "\r")).toHaveLength(0);
   });
 
   it("clears pending permission on idle", () => {
-    const { controller, fireStatus, ptyHandle } = createTestController();
+    const { controller, fireStatus, ptyHandle } = createTestController({ args: permissionArgs });
     simulateToolUse();
     fireStatus("waiting", "approve Bash");
     const req = parsedLines().find(l => l.type === "control_request");
@@ -854,6 +860,171 @@ describe("permission forwarding", () => {
     fireStatus("idle");
     controller.handleControlResponse({ behavior: "allow" }, req.request_id);
     expect(ptyHandle.writes.filter(w => w === "\r")).toHaveLength(0);
+  });
+
+  it("allow with identical updatedInput sends CR", async () => {
+    const { controller, fireStatus, ptyHandle } = createTestController({ args: permissionArgs });
+    await controller.start();
+    simulateToolUse();
+    fireStatus("waiting", "approve Bash");
+
+    const req = parsedLines().find(l => l.type === "control_request");
+    controller.handleControlResponse(
+      { behavior: "allow", updatedInput: { command: "ls" } },
+      req.request_id,
+    );
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(ptyHandle.writes).toContain("\r");
+  });
+
+  it("allow with modified updatedInput is denied, not approved", async () => {
+    vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    const { controller, fireStatus, ptyHandle } = createTestController({ args: permissionArgs });
+    await controller.start();
+    simulateToolUse();
+    fireStatus("waiting", "approve Bash");
+
+    const req = parsedLines().find(l => l.type === "control_request");
+    // The TUI dialog can only approve the input it is showing; a rewritten
+    // command must not be executed as if the original were authorized.
+    controller.handleControlResponse(
+      { behavior: "allow", updatedInput: { command: "rm -rf /" } },
+      req.request_id,
+    );
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(ptyHandle.writes).not.toContain("\r");
+    expect(ptyHandle.writes).toContain("\x1b");
+  });
+
+  it("auto-denies instead of emitting control_request when the flag is absent", async () => {
+    vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    const { controller, fireStatus, ptyHandle } = createTestController({
+      args: { inputFormat: "stream-json" },
+    });
+    await controller.start();
+    simulateToolUse();
+    fireStatus("waiting", "approve Bash");
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(parsedLines().find(l => l.type === "control_request")).toBeUndefined();
+    expect(ptyHandle.writes).toContain("\x1b");
+  });
+
+  it("auto-denies a pending permission on stdin EOF instead of hanging", async () => {
+    const { controller, fireStatus, ptyHandle, exitCodes } = createTestController({ args: permissionArgs });
+    await controller.start();
+    simulateToolUse();
+    fireStatus("waiting", "approve Bash");
+    expect(parsedLines().find(l => l.type === "control_request")).toBeDefined();
+
+    controller.handleStdinEof();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(ptyHandle.writes).toContain("\x1b");
+
+    fireStatus("idle");
+    expect(ptyHandle.kills).toContain("SIGTERM");
+    controller.handleClaudeExit(0);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(exitCodes).toContain(0);
+  });
+
+  it("auto-denies instead of emitting control_request after stdin closed", async () => {
+    vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    const { controller, fireStatus, ptyHandle } = createTestController({ args: permissionArgs });
+    await controller.start();
+    // An active turn keeps the session alive past EOF; the permission prompt
+    // then arrives with nobody left to answer it.
+    fireStatus("busy");
+    controller.handleStdinEof();
+    simulateToolUse();
+    fireStatus("waiting", "approve Bash");
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(parsedLines().find(l => l.type === "control_request")).toBeUndefined();
+    expect(ptyHandle.writes).toContain("\x1b");
+  });
+
+  it("auto-denies instead of leaving an invisible request when output is not stream-json", async () => {
+    // stdio permission tool over stream-json input, but text output — the
+    // control_request has no channel to reach the client, so it must not be
+    // set pending (which would wedge); deny-by-default completes the turn.
+    vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    const { controller, fireStatus, ptyHandle } = createTestController({
+      args: { ...permissionArgs, outputFormat: "text" },
+    });
+    await controller.start();
+    simulateToolUse();
+    fireStatus("waiting", "approve Bash");
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(parsedLines().find(l => l.type === "control_request")).toBeUndefined();
+    expect(ptyHandle.writes).toContain("\x1b");
+  });
+
+  it("does not drop the permission request when waiting precedes tool assembly", () => {
+    vi.useFakeTimers();
+    try {
+      const { fireStatus } = createTestController({ args: permissionArgs });
+      // `waiting` is observed before the tool_use finished assembling over SSE.
+      fireStatus("waiting", "approve Bash");
+      expect(parsedLines().find(l => l.type === "control_request")).toBeUndefined();
+
+      // The tool finishes assembling; the retry window must resolve it rather
+      // than leaving the dialog unanswered until stdin EOF.
+      simulateToolUse();
+      vi.advanceTimersByTime(25);
+
+      const req = parsedLines().find(l => l.type === "control_request");
+      expect(req).toBeDefined();
+      expect(req.request.tool_use_id).toBe("toolu_01");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not approve a stale tool against a newly focused dialog", () => {
+    vi.useFakeTimers();
+    try {
+      const { controller, fireStatus } = createTestController({ args: permissionArgs });
+      simulateToolUse();
+      fireStatus("waiting", "approve Bash");
+      const first = parsedLines().filter(l => l.type === "control_request");
+      expect(first).toHaveLength(1);
+      expect(first[0].request.tool_use_id).toBe("toolu_01");
+
+      // Client answers the first dialog, clearing the pending request.
+      controller.handleControlResponse({ behavior: "allow" }, first[0].request_id);
+
+      // A second dialog opens, but getLastToolUse() still returns toolu_01
+      // (the second tool_use hasn't assembled yet). It must NOT be re-approved
+      // as if it were the new request.
+      fireStatus("waiting", "approve Edit");
+      expect(parsedLines().filter(l => l.type === "control_request")).toHaveLength(1);
+
+      // The real second tool assembles; only now does a new request go out.
+      const secondTool = [
+        { type: "message_start", message: { id: "m2", model: "test", content: [] } },
+        { type: "content_block_start", index: 0, content_block: { type: "tool_use", id: "toolu_02", name: "Edit" } },
+        { type: "content_block_delta", index: 0, delta: { type: "input_json_delta", partial_json: '{"file_path":"/tmp/x"}' } },
+        { type: "content_block_stop", index: 0 },
+        { type: "message_stop" },
+      ];
+      for (const e of secondTool) output.emitSSE({ data: JSON.stringify(e), parsed: e });
+      vi.advanceTimersByTime(25);
+
+      const all = parsedLines().filter(l => l.type === "control_request");
+      expect(all).toHaveLength(2);
+      expect(all[1].request.tool_use_id).toBe("toolu_02");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
@@ -883,6 +1054,52 @@ describe("handleObservation", () => {
     const spy = vi.spyOn(output, "emitTranscriptEvent");
     controller.handleObservation({ kind: "transcript_line", line: { type: "system" } });
     expect(spy).toHaveBeenCalled();
+  });
+
+  it("reshapes transcript tool_result user lines into native user events", () => {
+    const { controller } = createTestController();
+    controller.handleObservation({
+      kind: "transcript_line",
+      line: {
+        type: "user",
+        message: { role: "user", content: [{ type: "tool_result", tool_use_id: "toolu_01", content: "ok", is_error: false }] },
+        uuid: "uuid-tr-1",
+        timestamp: "2026-06-09T00:00:00.000Z",
+        sessionId: "sess-tr",
+        toolUseResult: { stdout: "ok", stderr: "", interrupted: false },
+        parentUuid: "uuid-parent",
+        isSidechain: false,
+      },
+    });
+
+    const user = parsedLines().find(l => l.type === "user");
+    expect(user).toBeDefined();
+    expect(user.message.content[0].type).toBe("tool_result");
+    expect(user.tool_use_result).toEqual({ stdout: "ok", stderr: "", interrupted: false });
+    expect(user.uuid).toBe("uuid-tr-1");
+    expect(user.timestamp).toBe("2026-06-09T00:00:00.000Z");
+    expect(user.session_id).toBe("sess-tr");
+    expect(user.parent_tool_use_id).toBeNull();
+    // transcript-internal fields must not leak through
+    expect(user.toolUseResult).toBeUndefined();
+    expect(user.parentUuid).toBeUndefined();
+    expect(user.isSidechain).toBeUndefined();
+  });
+
+  it("does not reshape sidechain tool_result lines into user events", () => {
+    const { controller } = createTestController();
+    const spy = vi.spyOn(output, "emitTranscriptEvent");
+    controller.handleObservation({
+      kind: "transcript_line",
+      line: {
+        type: "user",
+        isSidechain: true,
+        message: { role: "user", content: [{ type: "tool_result", tool_use_id: "t", content: "x" }] },
+      },
+    });
+    // sidechain lines fall through to verbatim forwarding, not user reshaping
+    expect(spy).toHaveBeenCalled();
+    expect(parsedLines().find(l => l.type === "user" && l.tool_use_result)).toBeUndefined();
   });
 
   it("turns synthetic transcript API errors into error results", () => {

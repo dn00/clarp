@@ -73,30 +73,39 @@ the golden `native.stdout.jsonl` files — read those, not memory, when fixing.
   through raw.
 - Known intentional clarp extras (keep): `system.session_state_changed`,
   `system.post_turn_summary`, `system.api_retry`, busy/idle status.
+- `can_use_tool` allow with a *modified* `updatedInput`: native applies the
+  rewritten input; clarp cannot inject input into the TUI dialog, so it
+  denies instead (executing input the client never authorized would be
+  worse). Identical/absent `updatedInput` allows normally. Same constraint
+  applies to deny `message` text — the TUI decline is generic.
 
 ## Live replay findings (npm run parity:replay, 2026-06-09)
 
 Found by running clarp through the golden case matrix and diffing against the
 recorded native summaries (replay run: `.parity-runs/2026-06-10T06-19-26.162Z`).
 
-11. **Permission flow wedges clarp (worst finding).** All three permission
-    cases ended in SIGTERM (exit 143). Two distinct bugs:
-    a. *Late forwarding:* native surfaces `can_use_tool` ~3s after the Write
-       attempt; under clarp the TUI retried the tool three times
-       (thinking+tool_use ×3) before clarp emitted the `control_request` at
-       ~100s. Whatever clarp keys its permission detection on is slow or
-       missing the first attempts.
-    b. *No exit on EOF with pending permission:* after stdin closes while a
-       `can_use_tool` request is outstanding, clarp never exits — hangs until
-       killed. Native exits promptly when stdin closes.
+11. **Permission flow wedges clarp (worst finding).** ✅ FIXED 2026-06-10
+    (`fix/permission-flow-parity`). Root causes found: (a) clarp passed
+    `--permission-prompt-tool stdio` through to the interactive TUI, which
+    cannot honor a print-mode protocol flag — now intercepted; (b) SDK-shaped
+    `control_response` answers (nested request_id) were silently dropped by
+    the stdin parser — now accepted alongside the flat legacy shape; (c) stdin
+    EOF with a pending permission never resolved — now auto-denied so the
+    turn completes. Re-replay: all permission cases exit 0 with correct
+    results; allow round-trip verified live (file written, result.success).
+    Remaining: deny `message` text cannot reach the TUI (ESC is a generic
+    decline), and forwarding latency is bounded by the TUI dialog appearing —
+    re-measure after scratch-cwd templating.
 
-12. **No `user` tool_result events.** Native emits a `user` event carrying
-    `tool_use_result` after every tool execution; clarp emitted zero across
-    all tool cases. SDK-style consumers watching tool results see nothing.
+12. **No `user` tool_result events.** ✅ FIXED 2026-06-10. Transcript
+    tool-execution lines are reshaped into native's user event (`message`,
+    `uuid`, `timestamp`, `tool_use_result`; sidechain excluded).
+    Re-replay: `tool-use-bash-read` now shows zero key deltas vs golden.
 
-13. **`can_use_tool` over-emission.** Native only emits permission
-    control_requests when started with `--permission-prompt-tool stdio`;
-    clarp emits them unconditionally (saw one in the no-flag case).
+13. **`can_use_tool` over-emission.** ✅ FIXED 2026-06-10. Emission is gated
+    on `--permission-prompt-tool stdio` + stream-json input like native;
+    without it clarp auto-denies via the pty so the turn completes with the
+    model's explanation (native's deny-by-default behavior).
 
 14. **Missing control acks.** Native answers `initialize` (with a rich
     capabilities payload — commands list, etc.) and `set_permission_mode`

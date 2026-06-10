@@ -12,6 +12,7 @@ export type Args = {
   replayUserMessages: boolean;
   maxTurns: number | null;
   maxBudgetUsd: number | null;
+  permissionPromptTool: string | null;
   prompt: string | null;
   readPromptFromStdin: boolean;
   claudeArgs: string[];
@@ -22,7 +23,7 @@ const SCALAR_VALUE_FLAGS = new Set([
   "--model", "--permission-mode", "--system-prompt", "--system-prompt-file",
   "--append-system-prompt", "--append-system-prompt-file",
   "--session-id", "--effort", "--agent", "--agents", "--name", "-n",
-  "--setting-sources", "--settings", "--fallback-model", "--permission-prompt-tool",
+  "--setting-sources", "--settings", "--fallback-model",
   "--max-thinking-tokens", "--output-style", "--debug-file", "--json-schema",
   "--remote-control-session-name-prefix", "--plugin-dir", "--plugin-url",
   "--thinking", "--task-budget", "--prefill", "--deep-link-repo",
@@ -82,7 +83,6 @@ const VALUE_LABELS = new Map([
   ["--setting-sources", "sources"],
   ["--settings", "file-or-json"],
   ["--fallback-model", "model"],
-  ["--permission-prompt-tool", "tool"],
   ["--max-thinking-tokens", "tokens"],
   ["--output-style", "style"],
   ["--debug-file", "path"],
@@ -192,7 +192,8 @@ function getPackageVersion(): string {
 export function parseArgs(argv: string[]): Args | null {
   const result: Args = {
     outputFormat: "text", inputFormat: "text", verbose: false, includePartial: false,
-    replayUserMessages: false, maxTurns: null, maxBudgetUsd: null, prompt: null,
+    replayUserMessages: false, maxTurns: null, maxBudgetUsd: null,
+    permissionPromptTool: null, prompt: null,
     readPromptFromStdin: false,
     claudeArgs: [], cwd: process.cwd(),
   };
@@ -243,6 +244,21 @@ export function parseArgs(argv: string[]): Args | null {
     if (arg === "--max-turns") {
       result.maxTurns = parsePositiveIntegerFlag("--max-turns", argv[++i] || "");
       i++; continue;
+    }
+    // Intercepted, never passed through: the interactive TUI cannot honor a
+    // print-mode permission protocol flag, and passing it corrupts the TUI's
+    // permission behavior. clarp implements the stdio protocol itself.
+    if (arg.startsWith("--permission-prompt-tool=")) {
+      const value = arg.slice("--permission-prompt-tool=".length);
+      if (!value) throw new Error("error: option '--permission-prompt-tool <tool>' argument missing");
+      result.permissionPromptTool = value;
+      i++; continue;
+    }
+    if (arg === "--permission-prompt-tool") {
+      const value = argv[i + 1];
+      if (!value || value.startsWith("-")) throw new Error("error: option '--permission-prompt-tool <tool>' argument missing");
+      result.permissionPromptTool = value;
+      i += 2; continue;
     }
     if (arg.startsWith("--max-budget-usd=")) {
       result.maxBudgetUsd = parsePositiveNumberFlag("--max-budget-usd", arg.slice("--max-budget-usd=".length));
@@ -297,6 +313,8 @@ Flags:
   --replay-user-messages          Echo accepted user messages back on stdout
   --max-turns <n>                 Stop after N turns
   --max-budget-usd <n>            Accepted for compatibility; not enforced
+  --permission-prompt-tool stdio  Forward permission prompts as can_use_tool
+                                  control requests (stream-json input only)
 
 All other flags pass through to claude (interactive):
   --model, --permission-mode, --system-prompt, --append-system-prompt,
@@ -304,6 +322,6 @@ All other flags pass through to claude (interactive):
   --add-dir, --mcp-config, --settings, --json-schema, --debug, --debug-file,
   --plugin-dir, --plugin-url, --session-id, --continue, --resume,
   --bare, --effort, --agent, --agents, --name, --worktree,
-  --fallback-model, --permission-prompt-tool, --dangerously-skip-permissions
+  --fallback-model, --dangerously-skip-permissions
 `);
 }

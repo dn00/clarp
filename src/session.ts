@@ -18,6 +18,7 @@ import {
   isRetryExhausted,
   isTranscriptApiError,
   isTranscriptApiErrorMessage,
+  isTranscriptToolResultUserLine,
 } from "./transcript-events.js";
 import { TranscriptObserver } from "./transcript-observer.js";
 import {
@@ -31,6 +32,16 @@ import {
 import * as output from "./output.js";
 
 const TRANSCRIPT_EVENT_CLOCK_SKEW_MS = 5_000;
+
+function deepEqual(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) return false;
+  if (Array.isArray(a) !== Array.isArray(b)) return false;
+  const ka = Object.keys(a as object);
+  const kb = Object.keys(b as object);
+  if (ka.length !== kb.length) return false;
+  return ka.every((k) => deepEqual((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k]));
+}
 const READY_TIMEOUT_MS = 30_000;
 const EMPTY_TURN_TRANSCRIPT_GRACE_MS = 1500;
 const INTERRUPT_DISPATCH_ACK_TIMEOUT_MS = 2000;
@@ -77,7 +88,17 @@ export class SessionController {
   private processExited = false;
   private stdinClosed = false;
   private pendingPermissionRequestId: string | null = null;
+  private pendingPermissionInput: unknown = undefined;
   private permissionWarningShown = false;
+  // The tool_use id we've already turned into a permission request/deny this
+  // turn, so a re-polled `waiting` status can't double-fire or approve a stale
+  // tool against a freshly focused dialog.
+  private lastPermissionedToolId: string | null = null;
+  private permissionResolveTimer: ReturnType<typeof setTimeout> | null = null;
+  // ~200ms total window for a tool_use to finish assembling over SSE after the
+  // `waiting` status appears.
+  private static readonly PERMISSION_RESOLVE_RETRIES = 8;
+  private static readonly PERMISSION_RESOLVE_INTERVAL_MS = 25;
   private opQueue = new SessionOpQueue();
   private pidWatcher: PidWatcherLike;
   private started = false;
@@ -116,6 +137,14 @@ export class SessionController {
   async start(): Promise<void> {
     if (this.started) return;
     this.started = true;
+
+    const permTool = this.opts.args.permissionPromptTool;
+    if (permTool && permTool !== "stdio") {
+      process.stderr.write(
+        `clarp warning: --permission-prompt-tool ${permTool} is not supported (only "stdio" is); ` +
+        "permission prompts will be denied.\n",
+      );
+    }
 
     this.opts.backend.onObservation((obs) => this.handleObservation(obs));
     this.pidWatcherTimer = setTimeout(() => {
@@ -163,31 +192,17 @@ export class SessionController {
     } else if (status === "waiting") {
       this.waitingForAction = true;
       output.emitSessionStateChanged("requires_action");
-      if (this.opts.args.inputFormat !== "stream-json" && !this.permissionWarningShown) {
-        this.permissionWarningShown = true;
-        process.stderr.write(
-          "clarp warning: Claude is waiting for permission, but stream-json control responses are not enabled. " +
-          "Rerun with --input-format stream-json or use --dangerously-skip-permissions.\n",
-        );
-      }
 
       if (waitingFor && !this.pendingPermissionRequestId) {
-        const toolInfo = output.getLastToolUse();
-        if (toolInfo) {
-          this.pendingPermissionRequestId = randomUUID();
-          this.log(`Permission request: ${toolInfo.name} (${this.pendingPermissionRequestId})`);
-          output.emitControlRequest(
-            this.pendingPermissionRequestId,
-            toolInfo.name,
-            toolInfo.id,
-            toolInfo.input,
-          );
-        }
+        this.tryResolvePermission(0);
       }
     } else if (status === "idle") {
       this.waitingForAction = false;
       output.emitSessionStateChanged("idle");
       this.pendingPermissionRequestId = null;
+      this.pendingPermissionInput = undefined;
+      this.lastPermissionedToolId = null;
+      this.clearPermissionResolveTimer();
     }
 
     if (status === "busy" && !this.turnActive) {
@@ -287,13 +302,27 @@ export class SessionController {
     if (this.processExited) return;
     if (requestId !== this.pendingPermissionRequestId) return;
     if (resp.behavior === "allow") {
-      this.log(`Permission allow: ${requestId}`);
-      this.opQueue.enqueue({ type: "permission_response", behavior: "allow", requestId });
+      // The TUI dialog can only approve the input it is already showing.
+      // An allow that modifies the input would execute something the client
+      // never authorized — deny it instead.
+      const updated = resp.updatedInput;
+      if (updated !== undefined && !deepEqual(updated, this.pendingPermissionInput)) {
+        this.log(`Permission allow with modified input denied: ${requestId}`);
+        process.stderr.write(
+          "clarp warning: can_use_tool allow included an updatedInput that differs from the requested input; " +
+          "clarp cannot apply modified inputs to the interactive dialog, so the request was denied.\n",
+        );
+        this.opQueue.enqueue({ type: "permission_response", behavior: "deny", requestId });
+      } else {
+        this.log(`Permission allow: ${requestId}`);
+        this.opQueue.enqueue({ type: "permission_response", behavior: "allow", requestId });
+      }
     } else if (resp.behavior === "deny") {
       this.log(`Permission deny: ${requestId}`);
       this.opQueue.enqueue({ type: "permission_response", behavior: "deny", requestId });
     }
     this.pendingPermissionRequestId = null;
+    this.pendingPermissionInput = undefined;
   }
 
   /**
@@ -324,6 +353,14 @@ export class SessionController {
    */
   handleStdinEof(): void {
     this.stdinClosed = true;
+    if (this.pendingPermissionRequestId !== null) {
+      // stdin is gone, so no answer can ever arrive — deny so the turn
+      // resolves the way native does instead of hanging until killed.
+      this.log(`Permission auto-deny on stdin EOF: ${this.pendingPermissionRequestId}`);
+      this.pendingPermissionRequestId = null;
+      this.pendingPermissionInput = undefined;
+      this.opQueue.enqueue({ type: "permission_response", behavior: "deny", requestId: "stdin-eof" });
+    }
     this.maybeShutdownAfterInputDrained();
   }
 
@@ -401,7 +438,7 @@ export class SessionController {
     this.transcriptObserver = new TranscriptObserver({
       transcriptPath,
       onLine: (line) => {
-        if (this.isCurrentTranscriptErrorEvent(line)) {
+        if (this.isCurrentTranscriptErrorEvent(line) || this.isCurrentToolResultEvent(line)) {
           this.handleTranscriptLine(line);
         }
       },
@@ -412,6 +449,14 @@ export class SessionController {
 
   private isCurrentTranscriptErrorEvent(line: Record<string, unknown>): boolean {
     if (!isTranscriptApiError(line) && !isTranscriptApiErrorMessage(line)) return false;
+    return this.isRecentTranscriptLine(line);
+  }
+
+  private isCurrentToolResultEvent(line: Record<string, unknown>): boolean {
+    return isTranscriptToolResultUserLine(line) && this.isRecentTranscriptLine(line);
+  }
+
+  private isRecentTranscriptLine(line: Record<string, unknown>): boolean {
     if (typeof line.timestamp !== "string") return true;
     const timestamp = Date.parse(line.timestamp);
     return !Number.isFinite(timestamp) || timestamp >= this.startedAt - TRANSCRIPT_EVENT_CLOCK_SKEW_MS;
@@ -517,6 +562,85 @@ export class SessionController {
     } else {
       sendPermissionDeny(this.opts.ptyHandle);
     }
+  }
+
+  private canUseToolProtocolEnabled(): boolean {
+    // The can_use_tool request is emitted as a stream-json control_request, so
+    // it needs a stream-json *output* channel to reach the client — native
+    // requires the same. Without it the request would be invisible and the
+    // turn would wedge, so we fall back to deny-by-default instead.
+    return (
+      this.opts.args.inputFormat === "stream-json" &&
+      this.opts.args.outputFormat === "stream-json" &&
+      this.opts.args.permissionPromptTool === "stdio"
+    );
+  }
+
+  /**
+   * Resolves the permission dialog Claude is blocked on. Retries briefly to
+   * cover the race where `waiting` is observed before the tool_use finishes
+   * assembling over SSE — acting on a null or previous-turn tool would either
+   * drop the request (wedging the turn) or approve the wrong dialog.
+   */
+  private tryResolvePermission(attempt: number): void {
+    this.clearPermissionResolveTimer();
+    if (this.processExited) return;
+    // The dialog may have cleared (status advanced) or already been claimed.
+    if (!this.waitingForAction || this.pendingPermissionRequestId) return;
+
+    const toolInfo = output.getLastToolUse();
+    const fresh = !!toolInfo && !!toolInfo.id && toolInfo.id !== this.lastPermissionedToolId;
+    if (fresh) {
+      this.lastPermissionedToolId = toolInfo!.id;
+      if (this.canUseToolProtocolEnabled() && !this.stdinClosed) {
+        this.pendingPermissionRequestId = randomUUID();
+        this.pendingPermissionInput = toolInfo!.input;
+        this.log(`Permission request: ${toolInfo!.name} (${this.pendingPermissionRequestId})`);
+        output.emitControlRequest(
+          this.pendingPermissionRequestId,
+          toolInfo!.name,
+          toolInfo!.id,
+          toolInfo!.input,
+        );
+      } else {
+        // Native parity: with no permission client to ask, the tool is denied
+        // so the turn completes instead of wedging on the dialog.
+        this.warnPermissionAutoDeny();
+        this.log(`Permission auto-deny: ${toolInfo!.name}`);
+        this.opQueue.enqueue({ type: "permission_response", behavior: "deny", requestId: "auto-deny" });
+      }
+      return;
+    }
+
+    if (attempt < SessionController.PERMISSION_RESOLVE_RETRIES) {
+      this.permissionResolveTimer = setTimeout(
+        () => this.tryResolvePermission(attempt + 1),
+        SessionController.PERMISSION_RESOLVE_INTERVAL_MS,
+      );
+      return;
+    }
+
+    // Couldn't identify the tool behind the dialog within the assembly window.
+    // Deny so the turn completes (deny-by-default) rather than hang forever.
+    this.warnPermissionAutoDeny();
+    this.log("Permission auto-deny: unresolved tool behind dialog");
+    this.opQueue.enqueue({ type: "permission_response", behavior: "deny", requestId: "auto-deny" });
+  }
+
+  private clearPermissionResolveTimer(): void {
+    if (!this.permissionResolveTimer) return;
+    clearTimeout(this.permissionResolveTimer);
+    this.permissionResolveTimer = null;
+  }
+
+  private warnPermissionAutoDeny(): void {
+    if (this.permissionWarningShown) return;
+    this.permissionWarningShown = true;
+    process.stderr.write(
+      "clarp warning: Claude requested tool permission; clarp denied it because no permission client is connected. " +
+      "Use --input-format stream-json with --permission-prompt-tool stdio to handle permission requests, " +
+      "or --dangerously-skip-permissions when that matches your security policy.\n",
+    );
   }
 
   private markReady(): void {
@@ -758,6 +882,13 @@ export class SessionController {
   }
 
   private handleTranscriptLine(line: Record<string, unknown>): void {
+    if (isTranscriptToolResultUserLine(line)) {
+      // Reshaped to match native's user event, not forwarded verbatim —
+      // the transcript uses camelCase toolUseResult.
+      output.emitUserToolResult(line);
+      return;
+    }
+
     output.emitTranscriptEvent(line);
 
     if (isTranscriptApiError(line)) {
@@ -894,6 +1025,7 @@ export class SessionController {
     this.clearEmptyTurnTimer();
     this.clearInterruptTimer();
     this.clearReadinessTimer();
+    this.clearPermissionResolveTimer();
 
     const cleanupPromise = this.ensureCleanupPromise();
     void (async () => {

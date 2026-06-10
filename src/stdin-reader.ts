@@ -112,9 +112,15 @@ export function parseStdinLine(line: string, callbacks: Omit<StdinReaderCallback
     const req = parsed.request as Record<string, unknown> | undefined;
     if (req) callbacks.onControlRequest(req, parsed.request_id as string | undefined);
   } else if (parsed.type === "control_response") {
-    const resp = parsed.response as Record<string, unknown> | undefined;
-    const reqId = parsed.request_id as string;
-    if (resp && reqId) callbacks.onControlResponse(resp, reqId);
+    // SDK clients nest both request_id and the behavior payload inside
+    // `response` ({response: {subtype, request_id, response: {behavior}}});
+    // also accept the flat legacy shape ({request_id, response: {behavior}}).
+    const outer = parsed.response as Record<string, unknown> | undefined;
+    const reqId = (parsed.request_id ?? outer?.request_id) as string | undefined;
+    const inner = outer && typeof outer.response === "object" && outer.response !== null
+      ? (outer.response as Record<string, unknown>)
+      : outer;
+    if (inner && reqId) callbacks.onControlResponse(inner, reqId);
   } else if (parsed.type === "keep_alive") {
     callbacks.onKeepAlive();
   }
