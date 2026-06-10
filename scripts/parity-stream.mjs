@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -56,7 +57,10 @@ async function loadCases(defaultPrompts) {
   if (!file) return [{ name: "default", args: defaultArgs, prompts: defaultPrompts }];
 
   const text = await readFile(resolve(file), "utf8");
-  const parsed = JSON.parse(text);
+  // {{run-session-id}} resolves to one fresh UUID per invocation, shared by
+  // every case that references it — session ids cannot be reused across runs,
+  // so --session-id/--resume case pairs need a new id each time.
+  const parsed = JSON.parse(text.replaceAll("{{run-session-id}}", randomUUID()));
   if (!Array.isArray(parsed)) throw new Error("--cases must point to a JSON array");
 
   return parsed.map((item, index) => {
