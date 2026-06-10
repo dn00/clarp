@@ -2,7 +2,7 @@ import type { SSEEvent } from "./proxy.js";
 
 export type ContentBlock =
   | { type: "text"; text: string }
-  | { type: "thinking"; thinking: string }
+  | { type: "thinking"; thinking: string; signature: string }
   | { type: "tool_use"; id: string; name: string; input: unknown }
   | { type: "tool_result"; tool_use_id: string; content: unknown };
 
@@ -114,7 +114,13 @@ export class MessageAssembler {
         if (block.type === "text") {
           this.current.content.push({ type: "text", text: (block.text as string) || "" });
         } else if (block.type === "thinking") {
-          this.current.content.push({ type: "thinking", thinking: (block.thinking as string) || "" });
+          // Native thinking blocks carry a signature (needed by consumers that
+          // replay assistant content to the API); it streams via signature_delta.
+          this.current.content.push({
+            type: "thinking",
+            thinking: (block.thinking as string) || "",
+            signature: (block.signature as string) || "",
+          });
         } else if (block.type === "tool_use") {
           this.current.content.push({
             type: "tool_use",
@@ -142,6 +148,8 @@ export class MessageAssembler {
           block.text += (delta.text as string) || "";
         } else if (delta.type === "thinking_delta" && block.type === "thinking") {
           block.thinking += (delta.thinking as string) || "";
+        } else if (delta.type === "signature_delta" && block.type === "thinking") {
+          block.signature += (delta.signature as string) || "";
         } else if (
           delta.type === "input_json_delta" &&
           (block.type === "tool_use" || !KNOWN_BLOCK_TYPES.has(block.type))

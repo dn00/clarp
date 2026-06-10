@@ -5,6 +5,29 @@ against what clarp's `src/output.ts` / `src/message-assembler.ts` emit.
 Ordered by likely impact on SDK-compatible consumers. Event shapes cited from
 the golden `native.stdout.jsonl` files — read those, not memory, when fixing.
 
+## Parity policy
+
+clarp targets **contract parity**, not 100% literal parity. Tiers:
+
+- **Tier 1 — lifecycle contract (always 100%):** exactly one terminal
+  `result`, correct subtype/`is_error`/exit code, turn structure,
+  `can_use_tool` round-trip, interrupts, never hangs silently.
+- **Tier 2 — consumed fields (100%, finite list):** fields/acks real SDK
+  clients read or block on: `error_max_turns`, control handshake acks,
+  `stop_reason`, tool ids, thinking `signature`.
+- **Tier 3 — shape completeness (on demand):** envelope `uuid`/`request_id`,
+  full `usage` richness, `rate_limit_event` shape, `stream_event` counts,
+  `system.task_started`/`task_notification` (observed in the task-subagent
+  golden). Closed when a real consumer breaks on one.
+- **Tier 4 — won't fix, by design:** values clarp cannot truthfully produce.
+  Fabricating them would mislead consumers, so they are omitted instead:
+  `total_cost_usd` (no metered cost exists on a subscription), `ttft_ms`
+  (clarp's vantage differs), `thinking_tokens` estimates, the rich
+  `initialize` ack payload (account/models/agents — clarp acks with what it
+  truthfully observes: commands, output_style, pid), applying
+  `set_permission_mode` to the hidden TUI (acked for protocol compatibility;
+  permission decisions flow through `can_use_tool`/auto-deny).
+
 ## High impact — consumers parse these
 
 1. **`result` field names and richness.** Native `result.success` carries
@@ -15,15 +38,15 @@ the golden `native.stdout.jsonl` files — read those, not memory, when fixing.
    clarp emits `cost_usd` (wrong name — native is `total_cost_usd`) and has
    none of the rest. Golden: `text-multi-turn/native.stdout.jsonl`.
 
-2. **Missing result subtype `error_max_turns`.** Native exits code 1 with
-   `subtype: "error_max_turns"`, `errors: [...]`, no `result` field, when
-   `--max-turns` is exhausted. clarp has no such subtype anywhere.
+2. **Missing result subtype `error_max_turns`.** ✅ FIXED 2026-06-10. clarp now
+   ends the session with `error_max_turns` (is_error, no `result` field) and
+   exit 1 when `--max-turns` is exceeded, instead of interrupting and
+   continuing with `result.success`.
    Golden: `max-turns-exhaustion/native.stdout.jsonl`.
 
-3. **`thinking` blocks lose `signature`.** Native thinking blocks are
-   `{type, thinking, signature}`; clarp's assembler ignores `signature_delta`
-   so its thinking blocks have no signature. Consumers that replay assistant
-   content to the API need the signature. Golden: `thinking/native.stdout.jsonl`.
+3. **`thinking` blocks lose `signature`.** ✅ FIXED 2026-06-10. The assembler
+   accumulates `signature_delta`; thinking blocks are `{type, thinking,
+   signature}` like native. Golden: `thinking/native.stdout.jsonl`.
 
 4. **`assistant` event envelope.** Native: `uuid`, `request_id`,
    `parent_tool_use_id` at top level; `message` includes `id`, `type:
@@ -107,16 +130,20 @@ recorded native summaries (replay run: `.parity-runs/2026-06-10T06-19-26.162Z`).
     without it clarp auto-denies via the pty so the turn completes with the
     model's explanation (native's deny-by-default behavior).
 
-14. **Missing control acks.** Native answers `initialize` (with a rich
-    capabilities payload — commands list, etc.) and `set_permission_mode`
-    (`{"mode": ...}`) with `control_response` events; clarp answered neither.
+14. **Missing control acks.** ✅ FIXED 2026-06-10. clarp acks `initialize`
+    (with a truthful payload: commands from the transcript init, output_style,
+    pid — not native's full account/models capabilities, see tier 4) and
+    `set_permission_mode` (echoing `{mode}`), using native's nested shape
+    `{type, response: {subtype, request_id, response}}`. The interrupt ack was
+    also migrated from clarp's old flat shape to the nested one.
 
-15. **`--max-turns` not enforced.** Native stops after N turns with
-    `result.error_max_turns` (exit 1); clarp kept going (4 extra assistant
-    events) and reported `result.success` (exit 0).
+15. **`--max-turns` not enforced.** ✅ FIXED 2026-06-10. See #2: clarp now
+    emits `error_max_turns` and exits 1 instead of continuing.
 
-16. **Invalid model divergence.** Native reports a *success* result whose
-    text explains the model problem; clarp reports `result.error`.
+16. **Invalid model divergence.** ✅ FIXED 2026-06-10. Turn-level backend API
+    errors now report subtype `success` with `is_error: true` (matching the
+    invalid-model golden) instead of subtype `error`; `emitResult` decouples
+    `is_error` from subtype to allow this.
 
 17. **`stream_event` undercount.** With `--include-partial-messages`, clarp
     emitted 4 fewer `stream_event`s than native across two prompts —

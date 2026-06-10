@@ -49,7 +49,7 @@ describe("MessageAssembler", () => {
 
     expect(msgs).toHaveLength(2);
     expect(msgs[0]!.content).toHaveLength(1);
-    expect(msgs[0]!.content[0]).toEqual({ type: "thinking", thinking: "Let me think..." });
+    expect(msgs[0]!.content[0]).toEqual({ type: "thinking", thinking: "Let me think...", signature: "" });
     expect(msgs[1]!.content).toHaveLength(1);
     expect(msgs[1]!.content[0]).toEqual({ type: "text", text: "Answer" });
   });
@@ -281,5 +281,24 @@ describe("MessageAssembler", () => {
 
     expect(msgs).toHaveLength(1);
     expect(msgs[0]!.content[0]).toEqual({ type: "text", text: "Hi" });
+  });
+});
+
+describe("thinking signature", () => {
+  it("accumulates signature_delta into the thinking block like native", () => {
+    const msgs = collect([
+      sse({ type: "message_start", message: { id: "msg_sig", model: "m", content: [] } }),
+      sse({ type: "content_block_start", index: 0, content_block: { type: "thinking", thinking: "" } }),
+      sse({ type: "content_block_delta", index: 0, delta: { type: "thinking_delta", thinking: "hmm" } }),
+      sse({ type: "content_block_delta", index: 0, delta: { type: "signature_delta", signature: "AbC" } }),
+      sse({ type: "content_block_delta", index: 0, delta: { type: "signature_delta", signature: "dEf" } }),
+      sse({ type: "content_block_stop", index: 0 }),
+      sse({ type: "message_stop" }),
+    ]);
+
+    expect(msgs).toHaveLength(1);
+    // Native thinking blocks are {type, thinking, signature} — consumers that
+    // replay assistant content to the API need the signature intact.
+    expect(msgs[0]!.content[0]).toEqual({ type: "thinking", thinking: "hmm", signature: "AbCdEf" });
   });
 });
