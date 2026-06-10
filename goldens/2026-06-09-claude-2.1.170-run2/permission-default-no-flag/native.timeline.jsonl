@@ -1,0 +1,24 @@
+{"t":3,"action":"sequence_start","steps":3}
+{"t":3,"action":"send_prompt","index":0,"content":"Use the Write tool to create a file named perm_default.txt containing exactly the word hello"}
+{"t":3,"action":"wait_result_start"}
+{"t":806,"action":"event","type":"system","subtype":"init"}
+{"t":1871,"action":"event","type":"rate_limit_event"}
+{"t":3810,"action":"event","type":"system","subtype":"thinking_tokens"}
+{"t":3811,"action":"event","type":"system","subtype":"thinking_tokens"}
+{"t":3811,"action":"event","type":"system","subtype":"thinking_tokens"}
+{"t":3812,"action":"event","type":"assistant"}
+{"t":4728,"action":"event","type":"assistant"}
+{"t":4734,"action":"event","type":"user"}
+{"t":6470,"action":"event","type":"system","subtype":"thinking_tokens"}
+{"t":6977,"action":"event","type":"system","subtype":"thinking_tokens"}
+{"t":7319,"action":"event","type":"system","subtype":"thinking_tokens"}
+{"t":7320,"action":"event","type":"system","subtype":"thinking_tokens"}
+{"t":7320,"action":"event","type":"assistant"}
+{"t":7695,"action":"event","type":"assistant"}
+{"t":7709,"action":"event","type":"system","subtype":"notification"}
+{"t":7710,"action":"event","type":"result","subtype":"success"}
+{"t":7710,"action":"result","subtype":"success"}
+{"t":7730,"action":"wait_result_end","results":1}
+{"t":7730,"action":"close_stdin"}
+{"t":7730,"action":"sequence_done_closing_stdin"}
+{"t":8039,"action":"exit","code":0,"signal":null}
