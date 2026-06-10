@@ -23,7 +23,19 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
-      - run: npm ci
+      # npm intermittently fails to install platform-specific optional deps
+      # (rolldown native bindings; npm/cli#4828), reddening healthy builds.
+      # Retry with a clean node_modules, keeping the lockfile for determinism.
+      - name: Install dependencies
+        shell: bash
+        run: |
+          for attempt in 1 2 3; do
+            if npm ci; then exit 0; fi
+            echo "::warning::npm ci failed (attempt $attempt); retrying"
+            rm -rf node_modules
+            sleep 5
+          done
+          exit 1
       - run: npm run build
       - run: npm test
       - run: npm pack --dry-run
@@ -41,7 +53,16 @@ jobs:
         with:
           node-version: 22
           registry-url: https://registry.npmjs.org
-      - run: npm ci
+      - name: Install dependencies
+        shell: bash
+        run: |
+          for attempt in 1 2 3; do
+            if npm ci; then exit 0; fi
+            echo "::warning::npm ci failed (attempt $attempt); retrying"
+            rm -rf node_modules
+            sleep 5
+          done
+          exit 1
       - run: npm run build
       - run: npm test
       - run: npm publish --provenance --access public
