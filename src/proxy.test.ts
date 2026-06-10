@@ -1,5 +1,7 @@
-import { describe, it, expect } from "vitest";
-import { extractSSEEvents, createProxy, type SSEEvent } from "./proxy.js";
+import * as http from "node:http";
+import type * as net from "node:net";
+import { afterEach, describe, it, expect } from "vitest";
+import { extractSSEEvents, createProxy, startProxy, type ProxyCallbacks } from "./proxy.js";
 
 describe("extractSSEEvents", () => {
   it("parses a single complete event", () => {
@@ -138,5 +140,143 @@ describe("createProxy callbacks", () => {
       },
     });
     server.close();
+  });
+});
+
+function makeCallbacks(overrides: Partial<ProxyCallbacks> = {}): ProxyCallbacks {
+  return {
+    onSSEEvent: () => {},
+    onProxyError: () => {},
+    onRequestStart: () => {},
+    onRequestEnd: () => {},
+    ...overrides,
+  };
+}
+
+function startFakeUpstream(
+  handler: (req: http.IncomingMessage, res: http.ServerResponse) => void,
+): Promise<{ url: string; close: () => Promise<void> }> {
+  const server = http.createServer((req, res) => {
+    req.on("data", () => {});
+    req.on("end", () => handler(req, res));
+  });
+  return new Promise((resolve) => {
+    server.listen(0, "127.0.0.1", () => {
+      const addr = server.address() as net.AddressInfo;
+      resolve({
+        url: `http://127.0.0.1:${addr.port}`,
+        close: () => new Promise((r) => server.close(() => r())),
+      });
+    });
+  });
+}
+
+describe("createProxy upstream failure handling", () => {
+  const cleanups: Array<() => Promise<void> | void> = [];
+  afterEach(async () => {
+    while (cleanups.length > 0) await cleanups.pop()!();
+  });
+
+  async function startTestProxy(callbacks: ProxyCallbacks, upstreamBaseUrl: string): Promise<number> {
+    const { server, port } = await startProxy(callbacks, { upstreamBaseUrl });
+    cleanups.push(() => new Promise<void>((r) => { server.closeAllConnections(); server.close(() => r()); }));
+    return port;
+  }
+
+  function postToProxy(
+    port: number,
+    path: string,
+    body: string,
+  ): Promise<{ statusCode: number; raw: string }> {
+    return new Promise((resolve, reject) => {
+      const req = http.request(
+        { hostname: "127.0.0.1", port, path, method: "POST", headers: { "Content-Type": "application/json" } },
+        (res) => {
+          const chunks: Buffer[] = [];
+          res.on("data", (c: Buffer) => chunks.push(c));
+          res.on("end", () => resolve({ statusCode: res.statusCode || 0, raw: Buffer.concat(chunks).toString("utf8") }));
+        },
+      );
+      req.on("error", reject);
+      req.end(body);
+    });
+  }
+
+  it("responds 502 with a JSON error when the upstream is unreachable before headers", async () => {
+    const errors: Error[] = [];
+    // Port 1 on loopback is essentially guaranteed closed.
+    const port = await startTestProxy(
+      makeCallbacks({ onProxyError: (e) => errors.push(e) }),
+      "http://127.0.0.1:1",
+    );
+
+    const res = await postToProxy(port, "/v1/messages", "{}");
+
+    expect(res.statusCode).toBe(502);
+    expect(JSON.parse(res.raw).error.type).toBe("proxy_error");
+    expect(errors.length).toBeGreaterThan(0);
+  });
+
+  it("severs the connection on mid-stream upstream failure without fabricating bytes", async () => {
+    const ssePart = 'event: message_start\ndata: {"type":"message_start"}\n\n';
+    const upstream = await startFakeUpstream((req, res) => {
+      res.writeHead(200, { "Content-Type": "text/event-stream" });
+      res.write(ssePart);
+      setTimeout(() => req.socket.destroy(), 20);
+    });
+    cleanups.push(upstream.close);
+    const errors: Error[] = [];
+    const port = await startTestProxy(
+      makeCallbacks({ onProxyError: (e) => errors.push(e) }),
+      upstream.url,
+    );
+
+    // Collect whatever arrives until the connection dies.
+    const received = await new Promise<string>((resolve, reject) => {
+      const req = http.request(
+        { hostname: "127.0.0.1", port, path: "/v1/messages", method: "POST" },
+        (res) => {
+          const chunks: Buffer[] = [];
+          res.on("data", (c: Buffer) => chunks.push(c));
+          res.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
+          res.on("error", () => resolve(Buffer.concat(chunks).toString("utf8")));
+          res.on("aborted", () => resolve(Buffer.concat(chunks).toString("utf8")));
+        },
+      );
+      req.on("error", reject);
+      req.end("{}");
+    }).catch(() => "request-errored-before-headers");
+
+    // Claude received exactly the upstream bytes — no appended JSON blob.
+    expect(received === ssePart || received === "request-errored-before-headers").toBe(true);
+    expect(received).not.toContain("proxy_error");
+    expect(errors.length).toBeGreaterThan(0);
+  });
+
+  it("does not warn about non-SSE responses unless the request asked to stream", async () => {
+    const upstream = await startFakeUpstream((_req, res) => {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end('{"input_tokens":42}');
+    });
+    cleanups.push(upstream.close);
+    const errors: Error[] = [];
+    const port = await startTestProxy(
+      makeCallbacks({ onProxyError: (e) => errors.push(e) }),
+      upstream.url,
+    );
+
+    // count_tokens-style request: JSON 200 is the healthy response.
+    await postToProxy(port, "/v1/messages/count_tokens", JSON.stringify({ model: "m", messages: [] }));
+    expect(errors).toHaveLength(0);
+
+    // stream: false request: JSON 200 is also healthy.
+    await postToProxy(port, "/v1/messages", JSON.stringify({ model: "m", stream: false, messages: [] }));
+    expect(errors).toHaveLength(0);
+
+    // A request that asked to stream getting JSON back IS anomalous.
+    await postToProxy(port, "/v1/messages", JSON.stringify({ model: "m", stream: true, messages: [] }));
+    expect(errors.map((e) => e.message)).toEqual([
+      "Expected SSE but got content-type: application/json",
+    ]);
   });
 });

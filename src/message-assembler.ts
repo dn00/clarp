@@ -15,6 +15,8 @@ export type AssembledMessage = {
   usage: { input_tokens: number; output_tokens: number };
 };
 
+const KNOWN_BLOCK_TYPES = new Set(["text", "thinking", "tool_use", "tool_result"]);
+
 type MessageState = {
   id: string;
   model: string;
@@ -100,7 +102,7 @@ export class MessageAssembler {
 
       case "content_block_start": {
         if (!this.current) break;
-        const block = e.content_block as Record<string, unknown>;
+        const block = (e.content_block ?? {}) as Record<string, unknown>;
         const index = e.index as number;
         this.current.currentBlockIndex = index;
 
@@ -115,6 +117,12 @@ export class MessageAssembler {
             name: (block.name as string) || "",
             input: {},
           });
+        } else {
+          // Unknown block types (server_tool_use, redacted_thinking, future
+          // kinds) pass through raw: claude -p emits them as-is, and pushing a
+          // block keeps deltas targeting this index instead of corrupting the
+          // previous block.
+          this.current.content.push({ ...block } as unknown as ContentBlock);
         }
         break;
       }
@@ -129,9 +137,14 @@ export class MessageAssembler {
           block.text += (delta.text as string) || "";
         } else if (delta.type === "thinking_delta" && block.type === "thinking") {
           block.thinking += (delta.thinking as string) || "";
-        } else if (delta.type === "input_json_delta" && block.type === "tool_use") {
+        } else if (
+          delta.type === "input_json_delta" &&
+          (block.type === "tool_use" || !KNOWN_BLOCK_TYPES.has(block.type))
+        ) {
+          // Unknown blocks (e.g. server_tool_use) stream input the same way
+          // tool_use does; accumulate so the emitted block matches claude -p.
           const partial = (delta.partial_json as string) || "";
-          if (typeof block.input === "string") {
+          if (typeof (block as any).input === "string") {
             (block as any).input += partial;
           } else {
             (block as any).input = partial;
@@ -143,9 +156,13 @@ export class MessageAssembler {
       case "content_block_stop": {
         if (!this.current) break;
         const block = this.current.content[this.current.content.length - 1];
-        if (block?.type === "tool_use" && typeof block.input === "string") {
+        if (
+          block &&
+          (block.type === "tool_use" || !KNOWN_BLOCK_TYPES.has(block.type)) &&
+          typeof (block as any).input === "string"
+        ) {
           try {
-            (block as any).input = JSON.parse(block.input as string);
+            (block as any).input = JSON.parse((block as any).input as string);
           } catch {}
         }
         if (block?.type === "tool_use") {

@@ -167,6 +167,91 @@ describe("MessageAssembler", () => {
     }
   });
 
+  it("passes unknown block types through as claude -p does", () => {
+    const msgs = collect([
+      sse({ type: "message_start", message: { id: "msg_u1", model: "claude-opus-4-7", content: [] } }),
+      sse({ type: "content_block_start", index: 0, content_block: { type: "server_tool_use", id: "srvtoolu_01", name: "web_search", input: {} } }),
+      sse({ type: "content_block_delta", index: 0, delta: { type: "input_json_delta", partial_json: '{"query":' } }),
+      sse({ type: "content_block_delta", index: 0, delta: { type: "input_json_delta", partial_json: '"weather"}' } }),
+      sse({ type: "content_block_stop", index: 0 }),
+      sse({ type: "message_stop" }),
+    ]);
+
+    expect(msgs).toHaveLength(1);
+    const block = msgs[0]!.content[0] as unknown as Record<string, unknown>;
+    expect(block.type).toBe("server_tool_use");
+    expect(block.id).toBe("srvtoolu_01");
+    expect(block.name).toBe("web_search");
+    expect(block.input).toEqual({ query: "weather" });
+  });
+
+  it("passes redacted_thinking blocks through untouched", () => {
+    const msgs = collect([
+      sse({ type: "message_start", message: { id: "msg_u2", model: "claude-opus-4-7", content: [] } }),
+      sse({ type: "content_block_start", index: 0, content_block: { type: "redacted_thinking", data: "opaque-bytes" } }),
+      sse({ type: "content_block_stop", index: 0 }),
+      sse({ type: "message_stop" }),
+    ]);
+
+    expect(msgs).toHaveLength(1);
+    expect(msgs[0]!.content[0]).toEqual({ type: "redacted_thinking", data: "opaque-bytes" });
+  });
+
+  it("does not let deltas for an unknown block corrupt the previous block", () => {
+    const msgs = collect([
+      sse({ type: "message_start", message: { id: "msg_u3", model: "claude-opus-4-7", content: [] } }),
+      sse({ type: "content_block_start", index: 0, content_block: { type: "text", text: "" } }),
+      sse({ type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "Hello" } }),
+      sse({ type: "content_block_stop", index: 0 }),
+      // Unknown block whose deltas must not land on the text block above.
+      sse({ type: "content_block_start", index: 1, content_block: { type: "mystery_block" } }),
+      sse({ type: "content_block_delta", index: 1, delta: { type: "text_delta", text: "EVIL" } }),
+      sse({ type: "content_block_stop", index: 1 }),
+      sse({ type: "message_stop" }),
+    ]);
+
+    expect(msgs).toHaveLength(2);
+    expect(msgs[0]!.content[0]).toEqual({ type: "text", text: "Hello" });
+    // The second emission is the unknown block, not a re-emitted corrupted text block.
+    expect(msgs[1]!.content[0]!.type).toBe("mystery_block");
+  });
+
+  it("never reports an unknown block as lastToolUse and keeps prior tool input intact", () => {
+    const assembler = new MessageAssembler(() => {});
+    [
+      sse({ type: "message_start", message: { id: "msg_u4", model: "claude-opus-4-7", content: [] } }),
+      sse({ type: "content_block_start", index: 0, content_block: { type: "tool_use", id: "toolu_real", name: "Read" } }),
+      sse({ type: "content_block_delta", index: 0, delta: { type: "input_json_delta", partial_json: '{"file_path":"/tmp/x"}' } }),
+      sse({ type: "content_block_stop", index: 0 }),
+      sse({ type: "content_block_start", index: 1, content_block: { type: "server_tool_use", id: "srvtoolu_02", name: "web_search", input: {} } }),
+      sse({ type: "content_block_delta", index: 1, delta: { type: "input_json_delta", partial_json: '{"query":"x"}' } }),
+      sse({ type: "content_block_stop", index: 1 }),
+      sse({ type: "message_stop" }),
+    ].forEach(e => assembler.processSSE(e));
+
+    const last = assembler.getLastToolUse();
+    expect(last!.id).toBe("toolu_real");
+    expect(last!.name).toBe("Read");
+    expect(last!.input).toEqual({ file_path: "/tmp/x" });
+  });
+
+  it("handles a content_block_start with no content_block without corrupting neighbors", () => {
+    const msgs = collect([
+      sse({ type: "message_start", message: { id: "msg_u5", model: "claude-opus-4-7", content: [] } }),
+      sse({ type: "content_block_start", index: 0, content_block: { type: "text", text: "" } }),
+      sse({ type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "Hi" } }),
+      sse({ type: "content_block_stop", index: 0 }),
+      sse({ type: "content_block_start", index: 1 }),
+      sse({ type: "content_block_delta", index: 1, delta: { type: "text_delta", text: "EVIL" } }),
+      sse({ type: "content_block_stop", index: 1 }),
+      sse({ type: "message_stop" }),
+    ]);
+
+    expect(msgs).toHaveLength(2);
+    expect(msgs[0]!.content[0]).toEqual({ type: "text", text: "Hi" });
+    expect(msgs[1]!.content[0]).not.toEqual({ type: "text", text: "HiEVIL" });
+  });
+
   it("ignores ping events", () => {
     const msgs = collect([
       sse({ type: "message_start", message: { id: "msg_05", model: "claude-opus-4-7", content: [] } }),
