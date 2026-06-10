@@ -22,6 +22,10 @@ type MessageState = {
   model: string;
   content: ContentBlock[];
   currentBlockIndex: number;
+  // Block indices that received at least one input_json_delta. Only these get
+  // their accumulated string `input` JSON-parsed at content_block_stop — a raw
+  // block carrying a literal string `input` (no deltas) must pass through as-is.
+  jsonDeltaBlocks: Set<number>;
   stop_reason: string | null;
   usage: { input_tokens: number; output_tokens: number };
 };
@@ -86,6 +90,7 @@ export class MessageAssembler {
           model: (msg?.model as string) || "",
           content: [],
           currentBlockIndex: -1,
+          jsonDeltaBlocks: new Set<number>(),
           stop_reason: null,
           usage: { input_tokens: 0, output_tokens: 0 },
         };
@@ -143,6 +148,7 @@ export class MessageAssembler {
         ) {
           // Unknown blocks (e.g. server_tool_use) stream input the same way
           // tool_use does; accumulate so the emitted block matches claude -p.
+          this.current.jsonDeltaBlocks.add(this.current.currentBlockIndex);
           const partial = (delta.partial_json as string) || "";
           if (typeof (block as any).input === "string") {
             (block as any).input += partial;
@@ -159,7 +165,8 @@ export class MessageAssembler {
         if (
           block &&
           (block.type === "tool_use" || !KNOWN_BLOCK_TYPES.has(block.type)) &&
-          typeof (block as any).input === "string"
+          typeof (block as any).input === "string" &&
+          this.current.jsonDeltaBlocks.has(this.current.currentBlockIndex)
         ) {
           try {
             (block as any).input = JSON.parse((block as any).input as string);
