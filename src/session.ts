@@ -43,6 +43,12 @@ function deepEqual(a: unknown, b: unknown): boolean {
   return ka.every((k) => deepEqual((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k]));
 }
 const READY_TIMEOUT_MS = 30_000;
+// After a prompt is typed into the pty, Claude must start a turn (busy) within
+// this window. The TUI's status file reports idle a beat before its input box
+// accepts keystrokes, so a prompt typed into that gap is silently eaten — the
+// turn never starts and nothing else would ever time out (the readiness
+// watchdog is intentionally suppressed while a dispatch is in flight).
+const PROMPT_DISPATCH_TIMEOUT_MS = 10_000;
 // Generous bound for the startup phase: Claude must become observable within
 // this window or clarp fails fast with a terminal result instead of hanging
 // forever (the issue-#1 symptom when the session file is never found). Longer
@@ -126,6 +132,8 @@ export class SessionController {
   private interruptInFlight: InterruptTransaction | null = null;
   private interruptSequence = 0;
   private promptDispatchInFlight = false;
+  private dispatchDeadlineTimer: ReturnType<typeof setTimeout> | null = null;
+  private dispatchRetried = false;
   private turnInterrupted = false;
   private prefixNextPromptWithInterruptedMarker = false;
   private interruptedOnlyExitCode: number | null = null;
@@ -230,6 +238,7 @@ export class SessionController {
 
     if (status === "busy" && !this.turnActive) {
       this.promptDispatchInFlight = false;
+      this.clearDispatchDeadline();
       this.turnActive = true;
       this.turnCount++;
       this.turnStart = Date.now();
@@ -587,6 +596,48 @@ export class SessionController {
       : item.content;
     this.prefixNextPromptWithInterruptedMarker = false;
     sendPrompt(this.opts.ptyHandle, content);
+    this.dispatchRetried = false;
+    this.armDispatchDeadline(content);
+  }
+
+  private armDispatchDeadline(content: string): void {
+    this.clearDispatchDeadline();
+    this.dispatchDeadlineTimer = setTimeout(
+      () => this.onDispatchDeadline(content),
+      PROMPT_DISPATCH_TIMEOUT_MS,
+    );
+  }
+
+  private onDispatchDeadline(content: string): void {
+    this.dispatchDeadlineTimer = null;
+    // The dispatch resolved (turn started) or the session moved on.
+    if (!this.promptDispatchInFlight || this.turnActive) return;
+    if (this.processExited || this.shuttingDown || this.interruptInFlight !== null) return;
+    // The prompt reached Claude but produced a dialog instead of a turn; the
+    // permission machinery owns the session now and busy follows its answer.
+    if (this.waitingForAction || this.pendingPermissionRequestId !== null) return;
+
+    if (!this.dispatchRetried) {
+      // Recover the input race invisibly: the same prompt, typed again now that
+      // the TUI is certainly accepting input.
+      this.dispatchRetried = true;
+      this.log("Prompt produced no turn within deadline; re-sending once");
+      sendPrompt(this.opts.ptyHandle, content);
+      this.armDispatchDeadline(content);
+      return;
+    }
+
+    this.failWithTerminalError(
+      "Prompt dispatch failed",
+      `Claude did not start a turn within ${(PROMPT_DISPATCH_TIMEOUT_MS * 2) / 1000}s of the prompt being sent (one retry included). ` +
+      `The interactive session may be showing a dialog clarp cannot observe.`,
+    );
+  }
+
+  private clearDispatchDeadline(): void {
+    if (!this.dispatchDeadlineTimer) return;
+    clearTimeout(this.dispatchDeadlineTimer);
+    this.dispatchDeadlineTimer = null;
   }
 
   private dispatchSlashCommand(op: SlashCommandOp): void {
@@ -1073,6 +1124,7 @@ export class SessionController {
     this.clearInterruptTimer();
     this.clearReadinessTimer();
     this.clearPermissionResolveTimer();
+    this.clearDispatchDeadline();
 
     const cleanupPromise = this.ensureCleanupPromise();
     void (async () => {
