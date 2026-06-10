@@ -4,77 +4,94 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { mkdtempSync, readFileSync, existsSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { PidWatcher } from "./pid-watcher.js";
 
-// Empirically pins the issue-#1 mechanism on the real platform PTY (runs in the
-// existing cross-OS CI matrix). clarp keys PidWatcher on the pid node-pty
-// reports for the spawned binary; if that pid differs from the node process
-// that actually writes ~/.claude/sessions/<pid>.json, clarp polls a file that
-// never exists and hangs forever. This measures exactly that gap with a stub —
-// no real claude needed.
+// Empirically pins the issue-#1 mechanism AND the fix on the real platform PTY
+// (runs in the existing cross-OS CI matrix, no real claude needed).
+//
+// clarp keys PidWatcher on the pid node-pty reports for the spawned binary. On
+// Windows that binary is claude.cmd, so node-pty reports the cmd.exe wrapper
+// pid while the real Claude node process runs as a grandchild that writes
+// ~/.claude/sessions/<grandchild-pid>.json. The bug: clarp polls a file that
+// never exists. The fix: discover the real session file by cwd + recency.
+//
+// The stub mirrors how Claude installs per-platform (POSIX node-shebang script;
+// Windows .cmd → node grandchild) and writes a session file. We then assert
+// node-pty's reported pid vs the writer pid, and that a real PidWatcher finds
+// the session regardless.
 
 const stubDir = join(dirname(fileURLToPath(import.meta.url)), "__fixtures__", "win-pid-stub");
+const RECORDED_CWD = process.platform === "win32" ? "C:\\clarp\\probe\\cwd" : "/clarp/probe/cwd";
 
-async function spawnAndComparePids(binary: string): Promise<{ reportedPid: number; writerPid: number }> {
-  const work = mkdtempSync(join(tmpdir(), "clarp-pidprobe-"));
-  const pidFile = join(work, "child.pid");
+function waitFor(predicate: () => boolean, timeoutMs: number, label: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const startedAt = Date.now();
+    const poll = setInterval(() => {
+      if (predicate()) { clearInterval(poll); resolve(); }
+      else if (Date.now() - startedAt > timeoutMs) { clearInterval(poll); reject(new Error(label)); }
+    }, 50);
+  });
+}
+
+async function spawnProbe(binary: string): Promise<{ reportedPid: number; writerPid: number; discoveredSessionId: string | null }> {
+  const home = mkdtempSync(join(tmpdir(), "clarp-probe-home-"));
+  const sessionsDir = join(home, ".claude", "sessions");
+  const pidFile = join(home, "child.pid");
+  const startedAt = Date.now();
   const handle = nodePty.spawn(binary, [], {
     name: "xterm-256color",
     cols: 80,
     rows: 24,
-    // Deliberately NOT `work`: Windows locks the spawned process's working
-    // directory until it exits, which would EPERM the cleanup below and mask
-    // the measurement. The pid file still lands in `work` via env.
+    // Not `home`: Windows locks the spawned process's working directory, which
+    // would block cleanup. The stub writes into `home` via env paths instead.
     cwd: tmpdir(),
-    env: { ...process.env, CLARP_PROBE_PIDFILE: pidFile },
+    env: {
+      ...process.env,
+      CLARP_PROBE_PIDFILE: pidFile,
+      CLARP_PROBE_SESSIONS_DIR: sessionsDir,
+      CLARP_PROBE_CWD: RECORDED_CWD,
+    },
   });
   try {
-    const writerPid = await new Promise<number>((resolve, reject) => {
-      const startedAt = Date.now();
-      const poll = setInterval(() => {
-        if (existsSync(pidFile)) {
-          const raw = readFileSync(pidFile, "utf8").trim();
-          const value = Number(raw);
-          if (Number.isInteger(value) && value > 0) {
-            clearInterval(poll);
-            resolve(value);
-          }
-        } else if (Date.now() - startedAt > 10_000) {
-          clearInterval(poll);
-          reject(new Error("stub child never recorded its pid"));
-        }
-      }, 50);
+    await waitFor(() => existsSync(pidFile), 10_000, "stub child never recorded its pid");
+    const writerPid = Number(readFileSync(pidFile, "utf8").trim());
+    await waitFor(() => existsSync(join(sessionsDir, `${writerPid}.json`)), 10_000, "stub never wrote its session file");
+
+    // The reported pid is the wrapper on Windows; PidWatcher must still find the
+    // grandchild's session file by cwd + recency.
+    const watcher = new PidWatcher(handle.pid, { onStatusChange: () => {} }, home, {
+      cwd: RECORDED_CWD,
+      startedAt,
     });
-    return { reportedPid: handle.pid, writerPid };
+    const discoveredSessionId = watcher.getSessionId();
+    watcher.stop();
+    return { reportedPid: handle.pid, writerPid, discoveredSessionId };
   } finally {
-    // Best-effort: a kill+immediate-rm can still race a held handle on Windows;
-    // cleanup must never throw and overwrite the measurement/assertion.
     try { handle.kill(); } catch { /* already gone */ }
-    try { rmSync(work, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); } catch { /* ephemeral CI temp */ }
+    try { rmSync(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); } catch { /* ephemeral CI temp */ }
   }
 }
 
-describe("node-pty reported pid vs the process that writes the session file", () => {
+describe("issue-#1 wrapper-pid mechanism and the discovery fix on the real PTY", () => {
   it.runIf(process.platform === "win32")(
-    "Windows: reported pid is the cmd wrapper, NOT the node grandchild (issue #1)",
+    "Windows: pid mismatch is real, yet PidWatcher discovers the session",
     async () => {
-      const { reportedPid, writerPid } = await spawnAndComparePids(join(stubDir, "wrapper.cmd"));
-      // This is the bug: clarp would poll sessions/<reportedPid>.json, but the
-      // session file is written by writerPid. They differ, so the file is never
-      // found and the turn lifecycle never advances.
+      const { reportedPid, writerPid, discoveredSessionId } = await spawnProbe(join(stubDir, "wrapper.cmd"));
+      // The bug exists: node-pty reports the cmd wrapper, not the node grandchild.
       expect(reportedPid).not.toBe(writerPid);
+      // The fix works: discovery finds the grandchild's session file by cwd.
+      expect(discoveredSessionId).toBe("probe-session");
     },
-    20_000,
+    25_000,
   );
 
   it.runIf(process.platform !== "win32")(
-    "POSIX: reported pid IS the node process that writes the session file",
+    "POSIX: reported pid IS the node process, and PidWatcher resolves the session",
     async () => {
-      // child.mjs is a `#!/usr/bin/env node` script (how Claude installs on
-      // POSIX); node-pty execs node in place so the pids match and clarp's
-      // pid-keyed polling works.
-      const { reportedPid, writerPid } = await spawnAndComparePids(join(stubDir, "child.mjs"));
+      const { reportedPid, writerPid, discoveredSessionId } = await spawnProbe(join(stubDir, "child.mjs"));
       expect(reportedPid).toBe(writerPid);
+      expect(discoveredSessionId).toBe("probe-session");
     },
-    20_000,
+    25_000,
   );
 });

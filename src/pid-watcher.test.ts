@@ -147,3 +147,107 @@ describe("PidWatcher", () => {
     expect(transcriptPath).toBeNull();
   });
 });
+
+// When node-pty reports a wrapper's pid (Windows claude.cmd, POSIX shim) the
+// reported pid file never appears, so PidWatcher must discover Claude's real
+// session file by matching cwd + recency. The reported pid (WRAPPER_PID) is
+// deliberately one whose file is never written.
+describe("PidWatcher session discovery (wrapper-pid case)", () => {
+  const WRAPPER_PID = 4242;
+  const REAL_PID = process.pid; // a guaranteed-alive "grandchild" pid
+  let tmpDir: string;
+  let sessionsDir: string;
+  let startedAt: number;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "pid-discovery-test-"));
+    sessionsDir = path.join(tmpDir, ".claude", "sessions");
+    fs.mkdirSync(sessionsDir, { recursive: true });
+    startedAt = Date.now();
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  function writeSession(pid: number, data: Partial<PidFileData>): void {
+    const full: PidFileData = {
+      pid,
+      sessionId: `sess-${pid}`,
+      cwd: "/work/project",
+      kind: "interactive",
+      updatedAt: startedAt + 1000,
+      ...data,
+    };
+    fs.writeFileSync(path.join(sessionsDir, `${pid}.json`), JSON.stringify(full));
+  }
+
+  function makeWatcher(cwd: string): PidWatcher {
+    return new PidWatcher(WRAPPER_PID, { onStatusChange: () => {} }, tmpDir, { cwd, startedAt });
+  }
+
+  it("discovers the real session file by cwd when the reported pid file is absent", () => {
+    writeSession(REAL_PID, { cwd: "/work/project", sessionId: "real-session" });
+    const watcher = makeWatcher("/work/project");
+    expect(watcher.getSessionId()).toBe("real-session");
+  });
+
+  it("ignores session files for a different cwd", () => {
+    writeSession(REAL_PID, { cwd: "/some/other/dir", sessionId: "other" });
+    const watcher = makeWatcher("/work/project");
+    expect(watcher.getSessionId()).toBeNull();
+  });
+
+  it("ignores a stale prior-run file (updatedAt before start)", () => {
+    writeSession(REAL_PID, { updatedAt: startedAt - 60_000, sessionId: "stale" });
+    const watcher = makeWatcher("/work/project");
+    expect(watcher.getSessionId()).toBeNull();
+  });
+
+  it("ignores a session whose process is no longer alive", () => {
+    // pid 0 fails the liveness/validity guard deterministically.
+    writeSession(0, { cwd: "/work/project", sessionId: "dead" });
+    const watcher = makeWatcher("/work/project");
+    expect(watcher.getSessionId()).toBeNull();
+  });
+
+  it("adopts the newest matching session when several share the cwd", () => {
+    writeSession(REAL_PID, { cwd: "/work/project", sessionId: "newer", updatedAt: startedAt + 5000 });
+    // An older but still-fresh sibling in the same cwd (use this pid too — both alive).
+    fs.writeFileSync(
+      path.join(sessionsDir, "older.json"),
+      JSON.stringify({ pid: REAL_PID, sessionId: "older", cwd: "/work/project", kind: "interactive", updatedAt: startedAt + 1000 }),
+    );
+    const watcher = makeWatcher("/work/project");
+    expect(watcher.getSessionId()).toBe("newer");
+  });
+
+  it("reports status changes from the discovered file via polling", () => {
+    vi.useFakeTimers();
+    try {
+      writeSession(REAL_PID, { cwd: "/work/project", status: "busy", sessionId: "live" });
+      const changes: string[] = [];
+      const watcher = new PidWatcher(
+        WRAPPER_PID,
+        { onStatusChange: (status) => changes.push(status) },
+        tmpDir,
+        { cwd: "/work/project", startedAt },
+      );
+      watcher.start();
+      expect(changes).toEqual(["busy"]);
+      writeSession(REAL_PID, { cwd: "/work/project", status: "idle", sessionId: "live" });
+      vi.advanceTimersByTime(600);
+      expect(changes).toEqual(["busy", "idle"]);
+      watcher.stop();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("matches cwd case-insensitively and across separators on Windows", () => {
+    if (process.platform !== "win32") return;
+    writeSession(REAL_PID, { cwd: "C:\\Work\\Project", sessionId: "win" });
+    const watcher = makeWatcher("c:/work/project");
+    expect(watcher.getSessionId()).toBe("win");
+  });
+});

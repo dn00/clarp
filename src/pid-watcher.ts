@@ -24,6 +24,33 @@ function isSafeSessionId(sessionId: string): boolean {
   return /^[A-Za-z0-9._-]+$/.test(sessionId) && !sessionId.includes("..");
 }
 
+// Tolerance below clarp's start time when deciding a session file is fresh
+// enough to adopt — small so a prior run's file in the same cwd is excluded,
+// but non-zero to absorb filesystem mtime granularity.
+const ADOPT_SKEW_MS = 2000;
+
+/**
+ * Canonicalizes a cwd for cross-session comparison: resolves it, and on Windows
+ * folds separator and case differences (`\` vs `/`, drive-letter casing).
+ */
+function normalizeCwd(p: string): string {
+  let n: string;
+  try { n = path.resolve(p); } catch { n = p; }
+  if (process.platform === "win32") n = n.replace(/\\/g, "/").toLowerCase();
+  return n.replace(/[\\/]+$/, "");
+}
+
+function safeMtimeMs(file: string): number {
+  try { return fs.statSync(file).mtimeMs; } catch { return 0; }
+}
+
+/** Existence check that treats a permission error as "alive". */
+function isPidAlive(pid: number): boolean {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try { process.kill(pid, 0); return true; }
+  catch (e) { return (e as NodeJS.ErrnoException)?.code === "EPERM"; }
+}
+
 /**
  * Polls Claude Code's per-process session file for status and transcript
  * metadata. Tests can pass a homeDir to isolate filesystem state.
@@ -33,12 +60,28 @@ export class PidWatcher {
   private lastStatus: string | null = null;
   private lastWaitingFor: string | undefined = undefined;
   private pidFilePath: string;
+  private sessionsDir: string;
   private homeDir: string;
+  // clarp's working dir and start time, used to discover Claude's real session
+  // file when node-pty's reported pid points at a wrapper (Windows claude.cmd
+  // or a POSIX version-manager shim) rather than Claude's own process.
+  private cwd: string | undefined;
+  private startedAt: number;
+  // Once a session file is located, we pin it and stat it directly instead of
+  // re-scanning the sessions directory on every poll.
+  private adoptedPath: string | null = null;
 
-  constructor(private pid: number, private callbacks: PidWatcherCallbacks, homeDir?: string) {
+  constructor(
+    private pid: number,
+    private callbacks: PidWatcherCallbacks,
+    homeDir?: string,
+    opts?: { cwd?: string; startedAt?: number },
+  ) {
     this.homeDir = homeDir || os.homedir();
-    const sessionsDir = path.join(this.homeDir, ".claude", "sessions");
-    this.pidFilePath = path.join(sessionsDir, `${pid}.json`);
+    this.sessionsDir = path.join(this.homeDir, ".claude", "sessions");
+    this.pidFilePath = path.join(this.sessionsDir, `${pid}.json`);
+    this.cwd = opts?.cwd;
+    this.startedAt = opts?.startedAt ?? 0;
   }
 
   /**
@@ -71,7 +114,10 @@ export class PidWatcher {
     const data = this.readPidFile();
     if (!data) return null;
     if (!isSafeSessionId(data.sessionId)) return null;
-    const slug = "-" + data.cwd.replace(/\//g, "-").replace(/^-/, "");
+    // Claude encodes the project dir by replacing path separators with "-".
+    // Normalize Windows backslashes first so the direct path is tried; the
+    // readdir fallback below still covers any encoding we don't reproduce.
+    const slug = "-" + data.cwd.replace(/\\/g, "/").replace(/\//g, "-").replace(/^-/, "");
     const projectsDir = path.join(this.homeDir, ".claude", "projects");
     const direct = path.join(projectsDir, slug, `${data.sessionId}.jsonl`);
     if (fs.existsSync(direct)) return direct;
@@ -157,8 +203,58 @@ export class PidWatcher {
   }
 
   private readPidFile(): PidFileData | null {
+    // Without a cwd we can't discover by content, so trust the reported pid
+    // directly (unchanged legacy behavior).
+    if (this.cwd === undefined) return this.tryReadFile(this.pidFilePath);
+
+    if (!this.adoptedPath) {
+      this.adoptedPath = this.discoverSessionFile();
+      if (!this.adoptedPath) return null;
+    }
+    const data = this.tryReadFile(this.adoptedPath);
+    if (!data) {
+      // The adopted file vanished (rotated/cleaned); re-discover next poll.
+      this.adoptedPath = null;
+      return null;
+    }
+    return data;
+  }
+
+  /**
+   * Locates Claude's real session file. The reported pid is authoritative when
+   * its file exists (POSIX, where claude is a node-shebang script). When it
+   * doesn't — Claude was launched via claude.cmd on Windows or a version-manager
+   * shim, so node-pty reports the wrapper's pid and the real file is keyed on a
+   * grandchild pid — find it by matching cwd and recency.
+   */
+  private discoverSessionFile(): string | null {
+    if (fs.existsSync(this.pidFilePath)) return this.pidFilePath;
+    if (this.cwd === undefined) return null;
+
+    const targetCwd = normalizeCwd(this.cwd);
+    let names: string[];
+    try { names = fs.readdirSync(this.sessionsDir); } catch { return null; }
+
+    let best: { file: string; when: number } | null = null;
+    for (const name of names) {
+      if (!name.endsWith(".json")) continue;
+      const file = path.join(this.sessionsDir, name);
+      const data = this.tryReadFile(file);
+      if (!data || typeof data.cwd !== "string") continue;
+      if (normalizeCwd(data.cwd) !== targetCwd) continue;
+      const when = typeof data.updatedAt === "number" ? data.updatedAt : safeMtimeMs(file);
+      // Exclude a prior run's stale file in the same cwd, and any session whose
+      // process is already gone (claim a live, current session only).
+      if (when < this.startedAt - ADOPT_SKEW_MS) continue;
+      if (!isPidAlive(data.pid)) continue;
+      if (!best || when > best.when) best = { file, when };
+    }
+    return best?.file ?? null;
+  }
+
+  private tryReadFile(filePath: string): PidFileData | null {
     try {
-      return JSON.parse(fs.readFileSync(this.pidFilePath, "utf8")) as PidFileData;
+      return JSON.parse(fs.readFileSync(filePath, "utf8")) as PidFileData;
     } catch {
       return null;
     }

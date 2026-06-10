@@ -125,7 +125,11 @@ export class SessionController {
   private transcriptTurnError: { message: string; status?: number } | null = null;
 
   constructor(private opts: SessionControllerOptions) {
-    this.pidWatcher = (opts.pidWatcherFactory ?? ((pid, callbacks) => new PidWatcher(pid, callbacks)))(
+    this.pidWatcher = (
+      opts.pidWatcherFactory ??
+      ((pid, callbacks) =>
+        new PidWatcher(pid, callbacks, undefined, { cwd: opts.args.cwd, startedAt: this.startedAt }))
+    )(
       opts.pid,
       { onStatusChange: (status, waitingFor, _data) => this.handleStatusChange(status, waitingFor) },
     );
