@@ -1,4 +1,5 @@
 import * as fs from "node:fs";
+import { StringDecoder } from "node:string_decoder";
 
 const DEFAULT_POLL_INTERVAL_MS = 1000;
 const DEFAULT_INITIAL_READ_BYTES = 512 * 1024;
@@ -20,6 +21,9 @@ export class TranscriptObserver {
   private timer: ReturnType<typeof setInterval> | null = null;
   private offset: number | null = null;
   private pending = "";
+  // Persistent decoder so a multibyte UTF-8 character split across two polls
+  // is not mangled into replacement characters by independent decodes.
+  private decoder = new StringDecoder("utf8");
   private seenUuids = new Set<string>();
 
   constructor(private opts: TranscriptObserverOptions) {}
@@ -46,6 +50,7 @@ export class TranscriptObserver {
       } else if (stat.size < this.offset) {
         this.offset = 0;
         this.pending = "";
+        this.decoder = new StringDecoder("utf8");
       }
 
       if (stat.size <= this.offset) return;
@@ -55,7 +60,7 @@ export class TranscriptObserver {
       try {
         const buf = Buffer.alloc(readSize);
         fs.readSync(fd, buf, 0, readSize, this.offset);
-        let chunk = buf.toString("utf8");
+        let chunk = this.decoder.write(buf);
         if (skipLeadingPartialLine) {
           const firstNewline = chunk.indexOf("\n");
           chunk = firstNewline >= 0 ? chunk.slice(firstNewline + 1) : "";
