@@ -21,7 +21,10 @@ async function spawnAndComparePids(binary: string): Promise<{ reportedPid: numbe
     name: "xterm-256color",
     cols: 80,
     rows: 24,
-    cwd: work,
+    // Deliberately NOT `work`: Windows locks the spawned process's working
+    // directory until it exits, which would EPERM the cleanup below and mask
+    // the measurement. The pid file still lands in `work` via env.
+    cwd: tmpdir(),
     env: { ...process.env, CLARP_PROBE_PIDFILE: pidFile },
   });
   try {
@@ -43,8 +46,10 @@ async function spawnAndComparePids(binary: string): Promise<{ reportedPid: numbe
     });
     return { reportedPid: handle.pid, writerPid };
   } finally {
+    // Best-effort: a kill+immediate-rm can still race a held handle on Windows;
+    // cleanup must never throw and overwrite the measurement/assertion.
     try { handle.kill(); } catch { /* already gone */ }
-    rmSync(work, { recursive: true, force: true });
+    try { rmSync(work, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); } catch { /* ephemeral CI temp */ }
   }
 }
 
