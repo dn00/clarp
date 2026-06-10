@@ -18,6 +18,7 @@ export type PidFileData = {
  */
 export type PidWatcherCallbacks = {
   onStatusChange: (status: string, waitingFor: string | undefined, data: PidFileData) => void;
+  onWarning?: (message: string) => void;
 };
 
 function isSafeSessionId(sessionId: string): boolean {
@@ -29,6 +30,9 @@ function isSafeSessionId(sessionId: string): boolean {
 // enough to adopt — small so a prior run's file in the same cwd is excluded,
 // but non-zero to absorb filesystem mtime granularity.
 const ADOPT_SKEW_MS = 2000;
+const ADOPT_ANCESTRY_GRACE_MS = 10_000;
+
+type AncestryMatch = "ours" | "foreign" | "indeterminate";
 
 /**
  * Canonicalizes a cwd for cross-session comparison: resolves it, and on Windows
@@ -281,27 +285,39 @@ export class PidWatcher {
     }
 
     if (candidates.length === 0) return null;
-    if (candidates.length === 1) return candidates[0]!.file;
 
-    // Multiple live sessions share this cwd (e.g. two clarp runs launched from
-    // the same directory at once). Adopt only the one whose process descends
-    // from the wrapper we launched; if ancestry can't single one out, refuse
-    // rather than risk reporting against another run's Claude.
-    const ours = candidates.filter((c) => this.isDescendantOf(c.pid, this.pid));
-    if (ours.length === 0) return null;
-    return ours.reduce((a, b) => (b.when > a.when ? b : a)).file;
+    // Same-cwd sessions can appear before our real child writes its file. Always
+    // prefer a verified descendant, even when there is only one candidate.
+    const classified = candidates.map((c) => ({
+      ...c,
+      ancestry: this.classifyDescendantOf(c.pid, this.pid),
+    }));
+    const ours = classified.filter((c) => c.ancestry === "ours");
+    if (ours.length > 0) return ours.reduce((a, b) => (b.when > a.when ? b : a)).file;
+
+    if (Date.now() - this.startedAt < ADOPT_ANCESTRY_GRACE_MS) return null;
+
+    if (classified.every((c) => c.ancestry === "foreign")) return null;
+
+    const indeterminate = classified.filter((c) => c.ancestry === "indeterminate");
+    if (indeterminate.length === 0) return null;
+    this.callbacks.onWarning?.(
+      "could not verify Claude session ancestry; adopting newest matching cwd session after grace period",
+    );
+    return indeterminate.reduce((a, b) => (b.when > a.when ? b : a)).file;
   }
 
   /** Walks the parent chain from `pid` looking for `ancestor` (bounded depth). */
-  private isDescendantOf(pid: number, ancestor: number, maxDepth = 6): boolean {
+  private classifyDescendantOf(pid: number, ancestor: number, maxDepth = 6): AncestryMatch {
     let current = pid;
     for (let i = 0; i < maxDepth; i++) {
-      if (current === ancestor) return true;
+      if (current === ancestor) return "ours";
+      if (current === 1) return "foreign";
       const parent = this.parentPidOf(current);
-      if (parent == null || parent <= 0 || parent === current) return false;
+      if (parent == null || parent <= 0 || parent === current) return "indeterminate";
       current = parent;
     }
-    return false;
+    return "foreign";
   }
 
   private tryReadFile(filePath: string): PidFileData | null {

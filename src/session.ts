@@ -142,7 +142,10 @@ export class SessionController {
         new PidWatcher(pid, callbacks, undefined, { cwd: opts.args.cwd, startedAt: this.startedAt }))
     )(
       opts.pid,
-      { onStatusChange: (status, waitingFor, _data) => this.handleStatusChange(status, waitingFor) },
+      {
+        onStatusChange: (status, waitingFor, _data) => this.handleStatusChange(status, waitingFor),
+        onWarning: (message) => this.log(`PID watcher: ${message}`),
+      },
     );
   }
 

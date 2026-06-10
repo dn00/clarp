@@ -183,7 +183,11 @@ describe("PidWatcher session discovery (wrapper-pid case)", () => {
   }
 
   function makeWatcher(cwd: string): PidWatcher {
-    return new PidWatcher(WRAPPER_PID, { onStatusChange: () => {} }, tmpDir, { cwd, startedAt });
+    return new PidWatcher(WRAPPER_PID, { onStatusChange: () => {} }, tmpDir, {
+      cwd,
+      startedAt,
+      getParentPid: (pid) => (pid === REAL_PID ? WRAPPER_PID : null),
+    });
   }
 
   it("discovers the real session file by cwd when the reported pid file is absent", () => {
@@ -220,7 +224,11 @@ describe("PidWatcher session discovery (wrapper-pid case)", () => {
         WRAPPER_PID,
         { onStatusChange: (status) => changes.push(status) },
         tmpDir,
-        { cwd: "/work/project", startedAt },
+        {
+          cwd: "/work/project",
+          startedAt,
+          getParentPid: (pid) => (pid === REAL_PID ? WRAPPER_PID : null),
+        },
       );
       watcher.start();
       expect(changes).toEqual(["busy"]);
@@ -269,12 +277,33 @@ describe("PidWatcher concurrent same-cwd disambiguation", () => {
   // Wrapper 500 -> our Claude 1001; the other run is wrapper 600 -> Claude 1002.
   const parents: Record<number, number> = { 1001: 500, 1002: 600 };
 
-  function makeWatcher(): PidWatcher {
+  function makeWatcher(opts?: {
+    startedAt?: number;
+    parents?: Record<number, number | null>;
+    onWarning?: (message: string) => void;
+  }): PidWatcher {
+    const lookup = opts?.parents ?? parents;
     return new PidWatcher(WRAPPER_PID, { onStatusChange: () => {} }, tmpDir, {
       cwd: "/shared/dir",
-      startedAt,
+      startedAt: opts?.startedAt ?? startedAt,
       isPidAlive: () => true,
-      getParentPid: (pid) => parents[pid] ?? null,
+      getParentPid: (pid) => lookup[pid] ?? null,
+    });
+  }
+
+  function makeWatcherWithWarning(opts: {
+    startedAt: number;
+    parents: Record<number, number | null>;
+    warnings: string[];
+  }): PidWatcher {
+    return new PidWatcher(WRAPPER_PID, {
+      onStatusChange: () => {},
+      onWarning: (message) => opts.warnings.push(message),
+    }, tmpDir, {
+      cwd: "/shared/dir",
+      startedAt: opts.startedAt,
+      isPidAlive: () => true,
+      getParentPid: (pid) => opts.parents[pid] ?? null,
     });
   }
 
@@ -291,6 +320,40 @@ describe("PidWatcher concurrent same-cwd disambiguation", () => {
       JSON.stringify({ pid: 9003, sessionId: "alsotheirs", cwd: "/shared/dir", kind: "interactive", updatedAt: startedAt + 1500 }),
     );
     expect(makeWatcher().getSessionId()).toBeNull();
+  });
+
+  it("waits during the grace window instead of adopting a sole foreign candidate", () => {
+    writeSession(1002, "theirs", startedAt + 1000);
+    const watcher = makeWatcher();
+
+    expect(watcher.getSessionId()).toBeNull();
+
+    writeSession(1001, "ours", startedAt + 2000);
+    expect(watcher.getSessionId()).toBe("ours");
+  });
+
+  it("keeps refusing a positively foreign candidate after the grace window", () => {
+    writeSession(1002, "theirs", startedAt + 1000);
+    const watcher = makeWatcher({
+      startedAt: Date.now() - 11_000,
+      parents: { 1002: 600, 600: 1 },
+    });
+
+    expect(watcher.getSessionId()).toBeNull();
+  });
+
+  it("degrades to newest candidate after grace when ancestry is indeterminate", () => {
+    const warnings: string[] = [];
+    writeSession(1002, "theirs", startedAt + 1000);
+    writeSession(1003, "newer", startedAt + 2000);
+    const watcher = makeWatcherWithWarning({
+      startedAt: Date.now() - 11_000,
+      parents: { 1002: null, 1003: null },
+      warnings,
+    });
+
+    expect(watcher.getSessionId()).toBe("newer");
+    expect(warnings).toHaveLength(1);
   });
 });
 
