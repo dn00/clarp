@@ -1421,7 +1421,10 @@ describe("handleStdinEof", () => {
     expect(ptyHandle.kills).toHaveLength(0);
   });
 
-  it("times out instead of hanging when queued prompt never becomes ready", async () => {
+  it("times out via the startup watchdog when Claude is never observed", async () => {
+    // No status is ever observed (the Windows pid-mismatch / unobservable-session
+    // case), so the generous startup watchdog (120s) applies — not the 30s
+    // in-turn timeout — and it fails fast instead of hanging forever.
     const { controller, ptyHandle, exitCodes } = createTestController({ args: { inputFormat: "stream-json" } });
     const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
     await controller.start();
@@ -1432,13 +1435,47 @@ describe("handleStdinEof", () => {
     await Promise.resolve();
 
     await vi.advanceTimersByTimeAsync(30_000);
+    // Still within the startup window — must not have fired yet.
+    expect(ptyHandle.kills).toHaveLength(0);
 
-    expect(stderr.mock.calls.map(c => String(c[0])).join("")).toContain("Timed out after 30s waiting for Claude");
+    await vi.advanceTimersByTimeAsync(90_000);
+    expect(stderr.mock.calls.map(c => String(c[0])).join("")).toContain("Timed out after 120s waiting for Claude");
     expect(ptyHandle.kills).toContain("SIGTERM");
 
     controller.handleClaudeExit(143);
     await Promise.resolve();
     expect(exitCodes).toEqual([1]);
+  });
+
+  it("emits a terminal error result on startup timeout so stream-json has a terminator", async () => {
+    const lines: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk: any) => {
+      lines.push(typeof chunk === "string" ? chunk : chunk.toString());
+      return true;
+    });
+    vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    const { controller } = createTestController({ args: { inputFormat: "stream-json" } });
+    await controller.start();
+    controller.enqueuePrompt("pending");
+    controller.handleStdinEof();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    await vi.advanceTimersByTimeAsync(120_000);
+
+    const results = lines
+      .map(l => { try { return JSON.parse(l); } catch { return null; } })
+      .filter(Boolean)
+      .filter((e: any) => e.type === "result");
+    expect(results).toHaveLength(1);
+    expect(results[0].subtype).toBe("error");
+    expect(results[0].is_error).toBe(true);
+
+    // The terminal exit must not emit a second result.
+    controller.handleClaudeExit(143);
+    await Promise.resolve();
+    expect(lines.map(l => { try { return JSON.parse(l); } catch { return null; } })
+      .filter((e: any) => e?.type === "result")).toHaveLength(1);
   });
 
   it("times out instead of hanging when queued prompt waits on unresolved permission", async () => {

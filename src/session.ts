@@ -43,6 +43,12 @@ function deepEqual(a: unknown, b: unknown): boolean {
   return ka.every((k) => deepEqual((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k]));
 }
 const READY_TIMEOUT_MS = 30_000;
+// Generous bound for the startup phase: Claude must become observable within
+// this window or clarp fails fast with a terminal result instead of hanging
+// forever (the issue-#1 symptom when the session file is never found). Longer
+// than READY_TIMEOUT_MS so a slow-but-healthy cold start (MCP load, big repo)
+// isn't killed.
+const STARTUP_READY_TIMEOUT_MS = 120_000;
 const EMPTY_TURN_TRANSCRIPT_GRACE_MS = 1500;
 const INTERRUPT_DISPATCH_ACK_TIMEOUT_MS = 2000;
 const INTERRUPT_ESCAPE_ACK_TIMEOUT_MS = 1000;
@@ -84,6 +90,11 @@ export class SessionController {
   private turnCount = 0;
   private turnStart = 0;
   private claudeReady = false;
+  // True once Claude's status has been observed at all (any status). Distinct
+  // from claudeReady (set on idle): it marks the end of the startup phase, where
+  // never seeing a status means the session file was never found (issue #1).
+  private claudeObserved = false;
+  private resultEmitted = false;
   private waitingForAction = false;
   private processExited = false;
   private stdinClosed = false;
@@ -153,13 +164,11 @@ export class SessionController {
     this.opts.backend.onObservation((obs) => this.handleObservation(obs));
     this.pidWatcherTimer = setTimeout(() => {
       this.startPidWatcherAndBackend().catch((err: Error) => {
-        this.reportAsyncError("Backend observation start failed", err);
-        this.requestShutdown(1);
+        this.failWithTerminalError("Backend observation start failed", err.message);
       });
     }, 1500);
     this.runDispatchLoop().catch((err: Error) => {
-      this.reportAsyncError("Dispatch loop failed", err);
-      this.requestShutdown(1);
+      this.failWithTerminalError("Dispatch loop failed", err.message);
     });
   }
 
@@ -186,6 +195,13 @@ export class SessionController {
    */
   handleStatusChange(status: string, waitingFor?: string): void {
     if (this.processExited) return;
+    // First observation ends the startup phase: the session file was found, so
+    // the generous startup watchdog stands down and any in-turn watchdog re-arms
+    // with the shorter timeout on the next dispatch pass.
+    if (!this.claudeObserved) {
+      this.claudeObserved = true;
+      this.clearReadinessTimer();
+    }
     this.log(`Status: ${status}${waitingFor ? ` (${waitingFor})` : ""}`);
     this.startOrUpdateTranscriptObservation();
     output.emitStatus(status, waitingFor);
@@ -340,7 +356,8 @@ export class SessionController {
     this.completeInterrupt("process_exit");
     if (this.turnActive) {
       this.turnActive = false;
-      if (!this.opts.backend.capabilities.emitsResults) {
+      if (!this.opts.backend.capabilities.emitsResults && !this.resultEmitted) {
+        this.resultEmitted = true;
         const text = output.getAccumulatedText();
         if (code === 0) {
           output.emitResult("success", text, { durationMs: Date.now() - this.turnStart, numTurns: this.turnCount });
@@ -481,35 +498,57 @@ export class SessionController {
     }
 
     if (!this.readinessTimer) {
+      const timeoutMs = this.claudeObserved ? READY_TIMEOUT_MS : STARTUP_READY_TIMEOUT_MS;
       this.readinessTimer = setTimeout(() => {
         this.readinessTimer = null;
         if (!this.shouldArmReadinessTimer()) return;
-        const err = new Error(
-          `Timed out after ${READY_TIMEOUT_MS / 1000}s waiting for Claude to become ready. ` +
+        const message =
+          `Timed out after ${timeoutMs / 1000}s waiting for Claude to become ready. ` +
           `Claude may be showing a startup, trust, or permission prompt, or Clarp may be unable to observe Claude's PID status. ` +
           `Open Claude Code in this project to resolve any prompts, check that the project is trusted, ` +
-          `or use --dangerously-skip-permissions only when that matches your security policy.`
-        );
-        this.reportAsyncError("Dispatch loop failed", err);
-        this.requestShutdown(1);
+          `or use --dangerously-skip-permissions when that matches your security policy.`;
+        this.failWithTerminalError("Readiness timeout", message);
         this.opQueue.wake();
-      }, READY_TIMEOUT_MS);
+      }, timeoutMs);
     }
 
     return this.opQueue.waitForChange();
   }
 
   private shouldArmReadinessTimer(): boolean {
+    if (this.processExited || this.shuttingDown || this.interruptInFlight !== null) return false;
+    if (this.promptDispatchInFlight) return false;
+    // Startup phase: Claude's status has never been observed. Arm
+    // unconditionally so a session that is never observable (e.g. the Windows
+    // pid mismatch) fails fast instead of hanging — including when the prompt
+    // was passed as a claude arg and the op-queue is empty (`clarp -p "..."`),
+    // the issue-#1 case.
+    if (!this.claudeObserved) return true;
+    // In-turn: only when a queued prompt is blocked waiting (unchanged).
     const blockedOnPermission = this.waitingForAction || this.pendingPermissionRequestId !== null;
     return (
       this.opQueue.normalLength > 0 &&
       !this.isReadyForPrompt() &&
-      !this.promptDispatchInFlight &&
-      this.interruptInFlight === null &&
-      !this.processExited &&
-      !this.shuttingDown &&
       (!this.turnActive || blockedOnPermission)
     );
+  }
+
+  /**
+   * Logs an error and, for machine-readable output formats, emits a terminal
+   * `result` so a stream-json/json consumer always gets a parseable terminator
+   * instead of a truncated stream, then requests a non-zero shutdown. Emits at
+   * most one terminal result for the session.
+   */
+  private failWithTerminalError(context: string, message: string): void {
+    this.reportAsyncError(context, new Error(message));
+    if (!this.resultEmitted && this.opts.args.outputFormat !== "text") {
+      this.resultEmitted = true;
+      output.emitResult("error", message, {
+        durationMs: Date.now() - this.startedAt,
+        numTurns: this.turnCount,
+      });
+    }
+    this.requestShutdown(1);
   }
 
   private processNextSessionOp(): boolean {
@@ -650,6 +689,7 @@ export class SessionController {
   private markReady(): void {
     this.clearReadinessTimer();
     this.claudeReady = true;
+    this.claudeObserved = true;
     if (this.isReadyForPrompt()) this.opQueue.wake();
   }
 
