@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -373,18 +373,6 @@ async function main() {
   const clarpCmd = parseCommand(argValue("--clarp", clarpDefault));
   const commonArgs = ["-p", "--model", model, "--input-format", "stream-json", "--output-format", "stream-json", "--verbose"];
 
-  const nativeVersion = await new Promise(resolveVersion => {
-    try {
-      const probe = spawn(nativeCmd[0], [...nativeCmd.slice(1), "--version"]);
-      let out = "";
-      probe.stdout.on("data", chunk => { out += chunk; });
-      probe.on("exit", () => resolveVersion(out.trim() || "unknown"));
-      probe.on("error", () => resolveVersion("unknown"));
-    } catch {
-      resolveVersion("unknown");
-    }
-  });
-
   // --native-replay <dir>: instead of spawning the native CLI (metered after
   // 2026-06-15), load its recorded summaries from a prior --native-only golden
   // capture and diff a fresh clarp run against them.
@@ -393,6 +381,24 @@ async function main() {
   if (replayDir) {
     replayReport = JSON.parse(await readFile(resolve(replayDir, "report.json"), "utf8"));
   }
+
+  // Only touch the native CLI when this run will actually execute it. In
+  // replay or --clarp-only mode we must never spawn `claude` — the whole point
+  // post-metering is to avoid native invocations entirely.
+  const willRunNative = !replayDir && !hasArg("--clarp-only");
+  const nativeVersion = !willRunNative
+    ? "n/a"
+    : await new Promise(resolveVersion => {
+        try {
+          const probe = spawn(nativeCmd[0], [...nativeCmd.slice(1), "--version"]);
+          let out = "";
+          probe.stdout.on("data", chunk => { out += chunk; });
+          probe.on("exit", () => resolveVersion(out.trim() || "unknown"));
+          probe.on("error", () => resolveVersion("unknown"));
+        } catch {
+          resolveVersion("unknown");
+        }
+      });
 
   const report = {
     model,
@@ -410,11 +416,17 @@ async function main() {
     const sessionOpts = testCase.sequence
       ? { sequence: testCase.sequence }
       : { prompts: testCase.prompts };
-    if (testCase.cwd) {
-      const caseCwd = resolve(root, testCase.cwd);
-      await mkdir(caseCwd, { recursive: true });
-      sessionOpts.cwd = caseCwd;
-    }
+    // Each run gets its own freshly-emptied workspace under outDir. A shared
+    // cwd let native's Write land before clarp's run (and leftover files from
+    // a prior invocation persist), changing the observed permission/Write
+    // behavior for reasons unrelated to the code under test.
+    const freshCwd = async (runName) => {
+      if (!testCase.cwd) return undefined;
+      const dir = resolve(caseDir, "cwd", safeName(runName));
+      await rm(dir, { recursive: true, force: true });
+      await mkdir(dir, { recursive: true });
+      return dir;
+    };
     const runs = [];
     let replayedNativeSummary = null;
     if (replayDir) {
@@ -430,6 +442,7 @@ async function main() {
         command: nativeCmd[0],
         args: [...nativeCmd.slice(1), ...args],
         ...sessionOpts,
+        cwd: await freshCwd("native"),
         outDir: caseDir,
       }));
     }
@@ -439,6 +452,7 @@ async function main() {
         command: clarpCmd[0],
         args: [...clarpCmd.slice(1), ...args],
         ...sessionOpts,
+        cwd: await freshCwd("clarp"),
         outDir: caseDir,
         env: { CLARP_DEBUG_API: "1" },
       }));
