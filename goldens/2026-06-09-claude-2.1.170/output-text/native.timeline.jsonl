@@ -1,0 +1,4 @@
+{"t":2,"action":"sequence_start","steps":1}
+{"t":2,"action":"close_stdin"}
+{"t":2,"action":"sequence_done_closing_stdin"}
+{"t":2954,"action":"exit","code":0,"signal":null}

@@ -1,0 +1,339 @@
+[
+  {
+    "name": "text-multi-turn",
+    "prompts": [
+      "answer in one word: ok",
+      "what is 2+2? answer with just the number",
+      "return a JSON object with key status and value ok",
+      "respond with exactly three comma-separated colors",
+      "say complete"
+    ]
+  },
+  {
+    "name": "tool-use-bash-read",
+    "args": [
+      "--dangerously-skip-permissions"
+    ],
+    "sequence": [
+      {
+        "type": "user",
+        "content": "Use the Bash tool to run exactly: echo golden_capture_ok"
+      },
+      {
+        "type": "wait_result",
+        "timeoutMs": 90000
+      },
+      {
+        "type": "user",
+        "content": "Use the Read tool to read package.json in the current directory and reply with just the value of the name field."
+      },
+      {
+        "type": "wait_result",
+        "timeoutMs": 90000
+      },
+      {
+        "type": "close_stdin"
+      }
+    ]
+  },
+  {
+    "name": "permission-default-no-flag",
+    "sequence": [
+      {
+        "type": "user",
+        "content": "Use the Write tool to create a file named perm_default.txt containing exactly the word hello"
+      },
+      {
+        "type": "wait_result",
+        "timeoutMs": 90000
+      },
+      {
+        "type": "close_stdin"
+      }
+    ],
+    "cwd": ".parity-runs/golden-cwd"
+  },
+  {
+    "name": "permission-allow",
+    "args": [
+      "--permission-prompt-tool",
+      "stdio"
+    ],
+    "sequence": [
+      {
+        "type": "user",
+        "content": "Use the Write tool to create a file named perm_allow.txt containing exactly the word hello"
+      },
+      {
+        "type": "wait_control_request",
+        "timeoutMs": 60000
+      },
+      {
+        "type": "control_response",
+        "behavior": "allow"
+      },
+      {
+        "type": "wait_result",
+        "timeoutMs": 90000
+      },
+      {
+        "type": "close_stdin"
+      }
+    ],
+    "cwd": ".parity-runs/golden-cwd"
+  },
+  {
+    "name": "permission-deny",
+    "args": [
+      "--permission-prompt-tool",
+      "stdio"
+    ],
+    "sequence": [
+      {
+        "type": "user",
+        "content": "Use the Write tool to create a file named perm_deny.txt containing exactly the word hello"
+      },
+      {
+        "type": "wait_control_request",
+        "timeoutMs": 60000
+      },
+      {
+        "type": "control_response",
+        "behavior": "deny",
+        "message": "User denied this tool use"
+      },
+      {
+        "type": "wait_result",
+        "timeoutMs": 90000
+      },
+      {
+        "type": "close_stdin"
+      }
+    ],
+    "cwd": ".parity-runs/golden-cwd"
+  },
+  {
+    "name": "websearch-server-tool-use",
+    "args": [
+      "--allowedTools",
+      "WebSearch"
+    ],
+    "sequence": [
+      {
+        "type": "user",
+        "content": "Use the WebSearch tool to find the latest stable Node.js LTS major version. Reply with just the number."
+      },
+      {
+        "type": "wait_result",
+        "timeoutMs": 120000
+      },
+      {
+        "type": "close_stdin"
+      }
+    ]
+  },
+  {
+    "name": "thinking",
+    "sequence": [
+      {
+        "type": "user",
+        "content": "Think hard step by step about this before answering: a farmer has 17 sheep and all but 9 run away. How many are left? Show brief reasoning, then the answer."
+      },
+      {
+        "type": "wait_result",
+        "timeoutMs": 90000
+      },
+      {
+        "type": "close_stdin"
+      }
+    ]
+  },
+  {
+    "name": "partial-messages",
+    "args": [
+      "--include-partial-messages"
+    ],
+    "prompts": [
+      "say the word blue",
+      "reply with exactly: partial_done"
+    ]
+  },
+  {
+    "name": "replay-user-messages",
+    "args": [
+      "--replay-user-messages"
+    ],
+    "prompts": [
+      "say the word green",
+      "reply with exactly: replay_done"
+    ]
+  },
+  {
+    "name": "max-turns-exhaustion",
+    "args": [
+      "--max-turns",
+      "1",
+      "--dangerously-skip-permissions"
+    ],
+    "sequence": [
+      {
+        "type": "user",
+        "content": "Run echo step1 with the Bash tool. Then run echo step2 with the Bash tool as a separate command. Then summarize what you did."
+      },
+      {
+        "type": "wait_result",
+        "timeoutMs": 90000
+      },
+      {
+        "type": "close_stdin"
+      }
+    ]
+  },
+  {
+    "name": "invalid-model-error",
+    "replaceArgs": true,
+    "args": [
+      "-p",
+      "--model",
+      "claude-bogus-model-xyz",
+      "--input-format",
+      "stream-json",
+      "--output-format",
+      "stream-json",
+      "--verbose"
+    ],
+    "sequence": [
+      {
+        "type": "user",
+        "content": "say hi"
+      },
+      {
+        "type": "wait_result",
+        "timeoutMs": 60000
+      },
+      {
+        "type": "close_stdin"
+      }
+    ]
+  },
+  {
+    "name": "session-id-fixed",
+    "args": [
+      "--session-id",
+      "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeee0001"
+    ],
+    "sequence": [
+      {
+        "type": "user",
+        "content": "Remember the codeword: PINEAPPLE. Reply with exactly: OK"
+      },
+      {
+        "type": "wait_result",
+        "timeoutMs": 60000
+      },
+      {
+        "type": "close_stdin"
+      }
+    ]
+  },
+  {
+    "name": "resume-fixed",
+    "args": [
+      "--resume",
+      "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeee0001"
+    ],
+    "sequence": [
+      {
+        "type": "user",
+        "content": "What is the codeword? Reply with just the codeword."
+      },
+      {
+        "type": "wait_result",
+        "timeoutMs": 60000
+      },
+      {
+        "type": "close_stdin"
+      }
+    ]
+  },
+  {
+    "name": "continue-recent",
+    "args": [
+      "--continue"
+    ],
+    "sequence": [
+      {
+        "type": "user",
+        "content": "Reply with exactly: CONTINUED"
+      },
+      {
+        "type": "wait_result",
+        "timeoutMs": 60000
+      },
+      {
+        "type": "close_stdin"
+      }
+    ]
+  },
+  {
+    "name": "control-protocol-misc",
+    "sequence": [
+      {
+        "type": "control_request",
+        "subtype": "initialize"
+      },
+      {
+        "delayMs": 500,
+        "type": "control_request",
+        "subtype": "set_permission_mode",
+        "request": {
+          "mode": "acceptEdits"
+        }
+      },
+      {
+        "delayMs": 500,
+        "type": "user",
+        "content": "reply with exactly: control_done"
+      },
+      {
+        "type": "wait_result",
+        "timeoutMs": 60000
+      },
+      {
+        "type": "close_stdin"
+      }
+    ]
+  },
+  {
+    "name": "output-json",
+    "replaceArgs": true,
+    "args": [
+      "-p",
+      "--model",
+      "sonnet",
+      "--output-format",
+      "json",
+      "what is 2+2? answer with just the number"
+    ],
+    "sequence": [
+      {
+        "type": "close_stdin"
+      }
+    ]
+  },
+  {
+    "name": "output-text",
+    "replaceArgs": true,
+    "args": [
+      "-p",
+      "--model",
+      "sonnet",
+      "say the word green"
+    ],
+    "sequence": [
+      {
+        "type": "close_stdin"
+      }
+    ]
+  }
+]

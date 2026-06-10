@@ -1,0 +1,2914 @@
+{
+  "model": "sonnet",
+  "captured_at": "2026-06-10T06:06:46.412Z",
+  "native_version": "2.1.170 (Claude Code)",
+  "out_dir": "goldens/2026-06-09-claude-2.1.170",
+  "cases": {
+    "text-multi-turn": {
+      "args": [],
+      "prompts_sent": 5,
+      "mode": "prompts",
+      "out_dir": "goldens/2026-06-09-claude-2.1.170/text-multi-turn",
+      "runs": {
+        "native": {
+          "exit": {
+            "code": 0,
+            "signal": null
+          },
+          "sent": 5,
+          "results_seen": 5,
+          "assistant_count": 10,
+          "result_count": 5,
+          "event_counts": {
+            "assistant": 10,
+            "rate_limit_event": 1,
+            "result.success": 5,
+            "system.init": 5,
+            "system.notification": 5,
+            "system.thinking_tokens": 12
+          },
+          "non_assistant_counts": {
+            "rate_limit_event": 1,
+            "system.init": 5,
+            "system.notification": 5,
+            "system.thinking_tokens": 12
+          },
+          "system_subtypes": [
+            "init",
+            "notification",
+            "thinking_tokens"
+          ],
+          "suspicious_assistant_texts": []
+        }
+      },
+      "timelines": {
+        "native": [
+          {
+            "t": 2,
+            "action": "send_prompt",
+            "index": 0,
+            "content": "answer in one word: ok"
+          },
+          {
+            "t": 737,
+            "action": "event",
+            "type": "system",
+            "subtype": "init"
+          },
+          {
+            "t": 2256,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 2490,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 2493,
+            "action": "event",
+            "type": "assistant"
+          },
+          {
+            "t": 2496,
+            "action": "event",
+            "type": "assistant"
+          },
+          {
+            "t": 2587,
+            "action": "event",
+            "type": "rate_limit_event"
+          },
+          {
+            "t": 2602,
+            "action": "event",
+            "type": "system",
+            "subtype": "notification"
+          },
+          {
+            "t": 2619,
+            "action": "event",
+            "type": "result",
+            "subtype": "success"
+          },
+          {
+            "t": 2619,
+            "action": "result",
+            "subtype": "success"
+          },
+          {
+            "t": 2619,
+            "action": "send_prompt",
+            "index": 1,
+            "content": "what is 2+2? answer with just the number"
+          },
+          {
+            "t": 2622,
+            "action": "event",
+            "type": "system",
+            "subtype": "init"
+          },
+          {
+            "t": 4164,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 4165,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 4165,
+            "action": "event",
+            "type": "assistant"
+          },
+          {
+            "t": 4167,
+            "action": "event",
+            "type": "assistant"
+          },
+          {
+            "t": 4266,
+            "action": "event",
+            "type": "system",
+            "subtype": "notification"
+          },
+          {
+            "t": 4266,
+            "action": "event",
+            "type": "result",
+            "subtype": "success"
+          },
+          {
+            "t": 4266,
+            "action": "result",
+            "subtype": "success"
+          },
+          {
+            "t": 4267,
+            "action": "send_prompt",
+            "index": 2,
+            "content": "return a JSON object with key status and value ok"
+          },
+          {
+            "t": 4271,
+            "action": "event",
+            "type": "system",
+            "subtype": "init"
+          },
+          {
+            "t": 7565,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 7565,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 7565,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 7565,
+            "action": "event",
+            "type": "assistant"
+          },
+          {
+            "t": 7565,
+            "action": "event",
+            "type": "assistant"
+          },
+          {
+            "t": 7599,
+            "action": "event",
+            "type": "system",
+            "subtype": "notification"
+          },
+          {
+            "t": 7599,
+            "action": "event",
+            "type": "result",
+            "subtype": "success"
+          },
+          {
+            "t": 7599,
+            "action": "result",
+            "subtype": "success"
+          },
+          {
+            "t": 7599,
+            "action": "send_prompt",
+            "index": 3,
+            "content": "respond with exactly three comma-separated colors"
+          },
+          {
+            "t": 7601,
+            "action": "event",
+            "type": "system",
+            "subtype": "init"
+          },
+          {
+            "t": 9050,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 9254,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 9254,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 9254,
+            "action": "event",
+            "type": "assistant"
+          },
+          {
+            "t": 9255,
+            "action": "event",
+            "type": "assistant"
+          },
+          {
+            "t": 9384,
+            "action": "event",
+            "type": "system",
+            "subtype": "notification"
+          },
+          {
+            "t": 9384,
+            "action": "event",
+            "type": "result",
+            "subtype": "success"
+          },
+          {
+            "t": 9384,
+            "action": "result",
+            "subtype": "success"
+          },
+          {
+            "t": 9384,
+            "action": "send_prompt",
+            "index": 4,
+            "content": "say complete"
+          },
+          {
+            "t": 9388,
+            "action": "event",
+            "type": "system",
+            "subtype": "init"
+          },
+          {
+            "t": 10974,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 10974,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 10976,
+            "action": "event",
+            "type": "assistant"
+          },
+          {
+            "t": 10984,
+            "action": "event",
+            "type": "assistant"
+          },
+          {
+            "t": 11074,
+            "action": "event",
+            "type": "system",
+            "subtype": "notification"
+          },
+          {
+            "t": 11075,
+            "action": "event",
+            "type": "result",
+            "subtype": "success"
+          },
+          {
+            "t": 11075,
+            "action": "result",
+            "subtype": "success"
+          },
+          {
+            "t": 11595,
+            "action": "exit",
+            "code": 0,
+            "signal": null
+          }
+        ]
+      }
+    },
+    "tool-use-bash-read": {
+      "args": [
+        "--dangerously-skip-permissions"
+      ],
+      "prompts_sent": 2,
+      "mode": "sequence",
+      "out_dir": "goldens/2026-06-09-claude-2.1.170/tool-use-bash-read",
+      "runs": {
+        "native": {
+          "exit": {
+            "code": 0,
+            "signal": null
+          },
+          "sent": 2,
+          "results_seen": 2,
+          "assistant_count": 8,
+          "result_count": 2,
+          "event_counts": {
+            "assistant": 8,
+            "rate_limit_event": 1,
+            "result.success": 2,
+            "system.init": 2,
+            "system.notification": 2,
+            "system.thinking_tokens": 12,
+            "user": 2
+          },
+          "non_assistant_counts": {
+            "rate_limit_event": 1,
+            "system.init": 2,
+            "system.notification": 2,
+            "system.thinking_tokens": 12,
+            "user": 2
+          },
+          "system_subtypes": [
+            "init",
+            "notification",
+            "thinking_tokens"
+          ],
+          "suspicious_assistant_texts": []
+        }
+      },
+      "timelines": {
+        "native": [
+          {
+            "t": 2,
+            "action": "sequence_start",
+            "steps": 5
+          },
+          {
+            "t": 2,
+            "action": "send_prompt",
+            "index": 0,
+            "content": "Use the Bash tool to run exactly: echo golden_capture_ok"
+          },
+          {
+            "t": 2,
+            "action": "wait_result_start"
+          },
+          {
+            "t": 740,
+            "action": "event",
+            "type": "system",
+            "subtype": "init"
+          },
+          {
+            "t": 1907,
+            "action": "event",
+            "type": "rate_limit_event"
+          },
+          {
+            "t": 2847,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 2847,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 2847,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 2848,
+            "action": "event",
+            "type": "assistant"
+          },
+          {
+            "t": 3333,
+            "action": "event",
+            "type": "assistant"
+          },
+          {
+            "t": 4016,
+            "action": "event",
+            "type": "user"
+          },
+          {
+            "t": 5583,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 5583,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 5583,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 5583,
+            "action": "event",
+            "type": "assistant"
+          },
+          {
+            "t": 5584,
+            "action": "event",
+            "type": "assistant"
+          },
+          {
+            "t": 5640,
+            "action": "event",
+            "type": "system",
+            "subtype": "notification"
+          },
+          {
+            "t": 5640,
+            "action": "event",
+            "type": "result",
+            "subtype": "success"
+          },
+          {
+            "t": 5640,
+            "action": "result",
+            "subtype": "success"
+          },
+          {
+            "t": 5646,
+            "action": "wait_result_end",
+            "results": 1
+          },
+          {
+            "t": 5646,
+            "action": "send_prompt",
+            "index": 1,
+            "content": "Use the Read tool to read package.json in the current directory and reply with just the value of the name field."
+          },
+          {
+            "t": 5646,
+            "action": "wait_result_start"
+          },
+          {
+            "t": 5649,
+            "action": "event",
+            "type": "system",
+            "subtype": "init"
+          },
+          {
+            "t": 7534,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 7534,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 7534,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 7534,
+            "action": "event",
+            "type": "assistant"
+          },
+          {
+            "t": 7833,
+            "action": "event",
+            "type": "assistant"
+          },
+          {
+            "t": 7917,
+            "action": "event",
+            "type": "user"
+          },
+          {
+            "t": 9987,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 9987,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 9987,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 9987,
+            "action": "event",
+            "type": "assistant"
+          },
+          {
+            "t": 9988,
+            "action": "event",
+            "type": "assistant"
+          },
+          {
+            "t": 10016,
+            "action": "event",
+            "type": "system",
+            "subtype": "notification"
+          },
+          {
+            "t": 10016,
+            "action": "event",
+            "type": "result",
+            "subtype": "success"
+          },
+          {
+            "t": 10016,
+            "action": "result",
+            "subtype": "success"
+          },
+          {
+            "t": 10060,
+            "action": "wait_result_end",
+            "results": 2
+          },
+          {
+            "t": 10060,
+            "action": "close_stdin"
+          },
+          {
+            "t": 10061,
+            "action": "sequence_done_closing_stdin"
+          },
+          {
+            "t": 10417,
+            "action": "exit",
+            "code": 0,
+            "signal": null
+          }
+        ]
+      }
+    },
+    "permission-default-no-flag": {
+      "args": [],
+      "prompts_sent": 1,
+      "mode": "sequence",
+      "out_dir": "goldens/2026-06-09-claude-2.1.170/permission-default-no-flag",
+      "runs": {
+        "native": {
+          "exit": {
+            "code": 0,
+            "signal": null
+          },
+          "sent": 1,
+          "results_seen": 1,
+          "assistant_count": 4,
+          "result_count": 1,
+          "event_counts": {
+            "assistant": 4,
+            "rate_limit_event": 1,
+            "result.success": 1,
+            "system.init": 1,
+            "system.notification": 1,
+            "system.thinking_tokens": 6,
+            "user": 1
+          },
+          "non_assistant_counts": {
+            "rate_limit_event": 1,
+            "system.init": 1,
+            "system.notification": 1,
+            "system.thinking_tokens": 6,
+            "user": 1
+          },
+          "system_subtypes": [
+            "init",
+            "notification",
+            "thinking_tokens"
+          ],
+          "suspicious_assistant_texts": []
+        }
+      },
+      "timelines": {
+        "native": [
+          {
+            "t": 2,
+            "action": "sequence_start",
+            "steps": 3
+          },
+          {
+            "t": 2,
+            "action": "send_prompt",
+            "index": 0,
+            "content": "Use the Write tool to create a file named perm_default.txt containing exactly the word hello"
+          },
+          {
+            "t": 2,
+            "action": "wait_result_start"
+          },
+          {
+            "t": 725,
+            "action": "event",
+            "type": "system",
+            "subtype": "init"
+          },
+          {
+            "t": 1818,
+            "action": "event",
+            "type": "rate_limit_event"
+          },
+          {
+            "t": 3048,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 3048,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 3048,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 3048,
+            "action": "event",
+            "type": "assistant"
+          },
+          {
+            "t": 4196,
+            "action": "event",
+            "type": "assistant"
+          },
+          {
+            "t": 4349,
+            "action": "event",
+            "type": "user"
+          },
+          {
+            "t": 5688,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 6144,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 6530,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 6530,
+            "action": "event",
+            "type": "assistant"
+          },
+          {
+            "t": 6837,
+            "action": "event",
+            "type": "assistant"
+          },
+          {
+            "t": 6909,
+            "action": "event",
+            "type": "system",
+            "subtype": "notification"
+          },
+          {
+            "t": 6910,
+            "action": "event",
+            "type": "result",
+            "subtype": "success"
+          },
+          {
+            "t": 6910,
+            "action": "result",
+            "subtype": "success"
+          },
+          {
+            "t": 6945,
+            "action": "wait_result_end",
+            "results": 1
+          },
+          {
+            "t": 6945,
+            "action": "close_stdin"
+          },
+          {
+            "t": 6945,
+            "action": "sequence_done_closing_stdin"
+          },
+          {
+            "t": 7240,
+            "action": "exit",
+            "code": 0,
+            "signal": null
+          }
+        ]
+      }
+    },
+    "permission-allow": {
+      "args": [
+        "--permission-prompt-tool",
+        "stdio"
+      ],
+      "prompts_sent": 1,
+      "mode": "sequence",
+      "out_dir": "goldens/2026-06-09-claude-2.1.170/permission-allow",
+      "runs": {
+        "native": {
+          "exit": {
+            "code": 0,
+            "signal": null
+          },
+          "sent": 1,
+          "results_seen": 1,
+          "assistant_count": 4,
+          "result_count": 1,
+          "event_counts": {
+            "assistant": 4,
+            "control_request": 1,
+            "rate_limit_event": 1,
+            "result.success": 1,
+            "system.init": 1,
+            "system.notification": 1,
+            "system.thinking_tokens": 6,
+            "user": 1
+          },
+          "non_assistant_counts": {
+            "control_request": 1,
+            "rate_limit_event": 1,
+            "system.init": 1,
+            "system.notification": 1,
+            "system.thinking_tokens": 6,
+            "user": 1
+          },
+          "system_subtypes": [
+            "init",
+            "notification",
+            "thinking_tokens"
+          ],
+          "suspicious_assistant_texts": []
+        }
+      },
+      "timelines": {
+        "native": [
+          {
+            "t": 2,
+            "action": "sequence_start",
+            "steps": 5
+          },
+          {
+            "t": 2,
+            "action": "send_prompt",
+            "index": 0,
+            "content": "Use the Write tool to create a file named perm_allow.txt containing exactly the word hello"
+          },
+          {
+            "t": 2,
+            "action": "wait_control_request_start"
+          },
+          {
+            "t": 712,
+            "action": "event",
+            "type": "system",
+            "subtype": "init"
+          },
+          {
+            "t": 1696,
+            "action": "event",
+            "type": "rate_limit_event"
+          },
+          {
+            "t": 3488,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 3489,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 3489,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 3489,
+            "action": "event",
+            "type": "assistant"
+          },
+          {
+            "t": 4307,
+            "action": "event",
+            "type": "assistant"
+          },
+          {
+            "t": 4313,
+            "action": "event",
+            "type": "control_request"
+          },
+          {
+            "t": 4314,
+            "action": "control_request_received",
+            "subtype": "can_use_tool",
+            "request_id": "26196d45-86ad-4d12-b48b-fe47b6637119"
+          },
+          {
+            "t": 4353,
+            "action": "wait_control_request_end",
+            "received": 1
+          },
+          {
+            "t": 4353,
+            "action": "send_control_response",
+            "behavior": "allow",
+            "request_id": "26196d45-86ad-4d12-b48b-fe47b6637119"
+          },
+          {
+            "t": 4353,
+            "action": "wait_result_start"
+          },
+          {
+            "t": 4362,
+            "action": "event",
+            "type": "user"
+          },
+          {
+            "t": 5940,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 6252,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 6252,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 6252,
+            "action": "event",
+            "type": "assistant"
+          },
+          {
+            "t": 6256,
+            "action": "event",
+            "type": "assistant"
+          },
+          {
+            "t": 6354,
+            "action": "event",
+            "type": "system",
+            "subtype": "notification"
+          },
+          {
+            "t": 6355,
+            "action": "event",
+            "type": "result",
+            "subtype": "success"
+          },
+          {
+            "t": 6355,
+            "action": "result",
+            "subtype": "success"
+          },
+          {
+            "t": 6377,
+            "action": "wait_result_end",
+            "results": 1
+          },
+          {
+            "t": 6377,
+            "action": "close_stdin"
+          },
+          {
+            "t": 6377,
+            "action": "sequence_done_closing_stdin"
+          },
+          {
+            "t": 6769,
+            "action": "exit",
+            "code": 0,
+            "signal": null
+          }
+        ]
+      }
+    },
+    "permission-deny": {
+      "args": [
+        "--permission-prompt-tool",
+        "stdio"
+      ],
+      "prompts_sent": 1,
+      "mode": "sequence",
+      "out_dir": "goldens/2026-06-09-claude-2.1.170/permission-deny",
+      "runs": {
+        "native": {
+          "exit": {
+            "code": 0,
+            "signal": null
+          },
+          "sent": 1,
+          "results_seen": 1,
+          "assistant_count": 4,
+          "result_count": 1,
+          "event_counts": {
+            "assistant": 4,
+            "control_request": 1,
+            "rate_limit_event": 1,
+            "result.success": 1,
+            "system.init": 1,
+            "system.notification": 1,
+            "system.thinking_tokens": 6,
+            "user": 1
+          },
+          "non_assistant_counts": {
+            "control_request": 1,
+            "rate_limit_event": 1,
+            "system.init": 1,
+            "system.notification": 1,
+            "system.thinking_tokens": 6,
+            "user": 1
+          },
+          "system_subtypes": [
+            "init",
+            "notification",
+            "thinking_tokens"
+          ],
+          "suspicious_assistant_texts": []
+        }
+      },
+      "timelines": {
+        "native": [
+          {
+            "t": 3,
+            "action": "sequence_start",
+            "steps": 5
+          },
+          {
+            "t": 3,
+            "action": "send_prompt",
+            "index": 0,
+            "content": "Use the Write tool to create a file named perm_deny.txt containing exactly the word hello"
+          },
+          {
+            "t": 3,
+            "action": "wait_control_request_start"
+          },
+          {
+            "t": 1227,
+            "action": "event",
+            "type": "system",
+            "subtype": "init"
+          },
+          {
+            "t": 2987,
+            "action": "event",
+            "type": "rate_limit_event"
+          },
+          {
+            "t": 3391,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 3391,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 3395,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 3396,
+            "action": "event",
+            "type": "assistant"
+          },
+          {
+            "t": 4295,
+            "action": "event",
+            "type": "assistant"
+          },
+          {
+            "t": 4301,
+            "action": "event",
+            "type": "control_request"
+          },
+          {
+            "t": 4301,
+            "action": "control_request_received",
+            "subtype": "can_use_tool",
+            "request_id": "85e5282e-341b-48c4-bc5f-46548e1c6611"
+          },
+          {
+            "t": 4303,
+            "action": "wait_control_request_end",
+            "received": 1
+          },
+          {
+            "t": 4303,
+            "action": "send_control_response",
+            "behavior": "deny",
+            "request_id": "85e5282e-341b-48c4-bc5f-46548e1c6611"
+          },
+          {
+            "t": 4303,
+            "action": "wait_result_start"
+          },
+          {
+            "t": 4305,
+            "action": "event",
+            "type": "user"
+          },
+          {
+            "t": 6565,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 6565,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 6565,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 6566,
+            "action": "event",
+            "type": "assistant"
+          },
+          {
+            "t": 6636,
+            "action": "event",
+            "type": "assistant"
+          },
+          {
+            "t": 6742,
+            "action": "event",
+            "type": "system",
+            "subtype": "notification"
+          },
+          {
+            "t": 6742,
+            "action": "event",
+            "type": "result",
+            "subtype": "success"
+          },
+          {
+            "t": 6742,
+            "action": "result",
+            "subtype": "success"
+          },
+          {
+            "t": 6785,
+            "action": "wait_result_end",
+            "results": 1
+          },
+          {
+            "t": 6785,
+            "action": "close_stdin"
+          },
+          {
+            "t": 6785,
+            "action": "sequence_done_closing_stdin"
+          },
+          {
+            "t": 7128,
+            "action": "exit",
+            "code": 0,
+            "signal": null
+          }
+        ]
+      }
+    },
+    "websearch-server-tool-use": {
+      "args": [
+        "--allowedTools",
+        "WebSearch"
+      ],
+      "prompts_sent": 1,
+      "mode": "sequence",
+      "out_dir": "goldens/2026-06-09-claude-2.1.170/websearch-server-tool-use",
+      "runs": {
+        "native": {
+          "exit": {
+            "code": 0,
+            "signal": null
+          },
+          "sent": 1,
+          "results_seen": 1,
+          "assistant_count": 6,
+          "result_count": 1,
+          "event_counts": {
+            "assistant": 6,
+            "rate_limit_event": 1,
+            "result.success": 1,
+            "system.init": 1,
+            "system.notification": 1,
+            "system.thinking_tokens": 9,
+            "user": 2
+          },
+          "non_assistant_counts": {
+            "rate_limit_event": 1,
+            "system.init": 1,
+            "system.notification": 1,
+            "system.thinking_tokens": 9,
+            "user": 2
+          },
+          "system_subtypes": [
+            "init",
+            "notification",
+            "thinking_tokens"
+          ],
+          "suspicious_assistant_texts": []
+        }
+      },
+      "timelines": {
+        "native": [
+          {
+            "t": 1,
+            "action": "sequence_start",
+            "steps": 3
+          },
+          {
+            "t": 1,
+            "action": "send_prompt",
+            "index": 0,
+            "content": "Use the WebSearch tool to find the latest stable Node.js LTS major version. Reply with just the number."
+          },
+          {
+            "t": 1,
+            "action": "wait_result_start"
+          },
+          {
+            "t": 709,
+            "action": "event",
+            "type": "system",
+            "subtype": "init"
+          },
+          {
+            "t": 1751,
+            "action": "event",
+            "type": "rate_limit_event"
+          },
+          {
+            "t": 3413,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 3413,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 3825,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 3826,
+            "action": "event",
+            "type": "assistant"
+          },
+          {
+            "t": 3828,
+            "action": "event",
+            "type": "assistant"
+          },
+          {
+            "t": 3836,
+            "action": "event",
+            "type": "user"
+          },
+          {
+            "t": 7200,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 7200,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 7612,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 7612,
+            "action": "event",
+            "type": "assistant"
+          },
+          {
+            "t": 7814,
+            "action": "event",
+            "type": "assistant"
+          },
+          {
+            "t": 11954,
+            "action": "event",
+            "type": "user"
+          },
+          {
+            "t": 14378,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 14777,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 15237,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 15237,
+            "action": "event",
+            "type": "assistant"
+          },
+          {
+            "t": 15429,
+            "action": "event",
+            "type": "assistant"
+          },
+          {
+            "t": 15638,
+            "action": "event",
+            "type": "system",
+            "subtype": "notification"
+          },
+          {
+            "t": 15638,
+            "action": "event",
+            "type": "result",
+            "subtype": "success"
+          },
+          {
+            "t": 15638,
+            "action": "result",
+            "subtype": "success"
+          },
+          {
+            "t": 15690,
+            "action": "wait_result_end",
+            "results": 1
+          },
+          {
+            "t": 15690,
+            "action": "close_stdin"
+          },
+          {
+            "t": 15690,
+            "action": "sequence_done_closing_stdin"
+          },
+          {
+            "t": 15864,
+            "action": "exit",
+            "code": 0,
+            "signal": null
+          }
+        ]
+      }
+    },
+    "thinking": {
+      "args": [],
+      "prompts_sent": 1,
+      "mode": "sequence",
+      "out_dir": "goldens/2026-06-09-claude-2.1.170/thinking",
+      "runs": {
+        "native": {
+          "exit": {
+            "code": 0,
+            "signal": null
+          },
+          "sent": 1,
+          "results_seen": 1,
+          "assistant_count": 2,
+          "result_count": 1,
+          "event_counts": {
+            "assistant": 2,
+            "rate_limit_event": 1,
+            "result.success": 1,
+            "system.init": 1,
+            "system.notification": 1,
+            "system.thinking_tokens": 4
+          },
+          "non_assistant_counts": {
+            "rate_limit_event": 1,
+            "system.init": 1,
+            "system.notification": 1,
+            "system.thinking_tokens": 4
+          },
+          "system_subtypes": [
+            "init",
+            "notification",
+            "thinking_tokens"
+          ],
+          "suspicious_assistant_texts": []
+        }
+      },
+      "timelines": {
+        "native": [
+          {
+            "t": 3,
+            "action": "sequence_start",
+            "steps": 3
+          },
+          {
+            "t": 3,
+            "action": "send_prompt",
+            "index": 0,
+            "content": "Think hard step by step about this before answering: a farmer has 17 sheep and all but 9 run away. How many are left? Show brief reasoning, then the answer."
+          },
+          {
+            "t": 3,
+            "action": "wait_result_start"
+          },
+          {
+            "t": 728,
+            "action": "event",
+            "type": "system",
+            "subtype": "init"
+          },
+          {
+            "t": 2085,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 2320,
+            "action": "event",
+            "type": "rate_limit_event"
+          },
+          {
+            "t": 2727,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 3127,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 3133,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 3136,
+            "action": "event",
+            "type": "assistant"
+          },
+          {
+            "t": 3410,
+            "action": "event",
+            "type": "assistant"
+          },
+          {
+            "t": 3499,
+            "action": "event",
+            "type": "system",
+            "subtype": "notification"
+          },
+          {
+            "t": 3499,
+            "action": "event",
+            "type": "result",
+            "subtype": "success"
+          },
+          {
+            "t": 3499,
+            "action": "result",
+            "subtype": "success"
+          },
+          {
+            "t": 3521,
+            "action": "wait_result_end",
+            "results": 1
+          },
+          {
+            "t": 3521,
+            "action": "close_stdin"
+          },
+          {
+            "t": 3521,
+            "action": "sequence_done_closing_stdin"
+          },
+          {
+            "t": 3836,
+            "action": "exit",
+            "code": 0,
+            "signal": null
+          }
+        ]
+      }
+    },
+    "partial-messages": {
+      "args": [
+        "--include-partial-messages"
+      ],
+      "prompts_sent": 2,
+      "mode": "prompts",
+      "out_dir": "goldens/2026-06-09-claude-2.1.170/partial-messages",
+      "runs": {
+        "native": {
+          "exit": {
+            "code": 0,
+            "signal": null
+          },
+          "sent": 2,
+          "results_seen": 2,
+          "assistant_count": 4,
+          "result_count": 2,
+          "event_counts": {
+            "assistant": 4,
+            "rate_limit_event": 1,
+            "result.success": 2,
+            "stream_event": 22,
+            "system.init": 2,
+            "system.notification": 2,
+            "system.status": 2,
+            "system.thinking_tokens": 6
+          },
+          "non_assistant_counts": {
+            "rate_limit_event": 1,
+            "stream_event": 22,
+            "system.init": 2,
+            "system.notification": 2,
+            "system.status": 2,
+            "system.thinking_tokens": 6
+          },
+          "system_subtypes": [
+            "init",
+            "notification",
+            "status",
+            "thinking_tokens"
+          ],
+          "suspicious_assistant_texts": []
+        }
+      },
+      "timelines": {
+        "native": [
+          {
+            "t": 3,
+            "action": "send_prompt",
+            "index": 0,
+            "content": "say the word blue"
+          },
+          {
+            "t": 742,
+            "action": "event",
+            "type": "system",
+            "subtype": "init"
+          },
+          {
+            "t": 742,
+            "action": "event",
+            "type": "system",
+            "subtype": "status"
+          },
+          {
+            "t": 1916,
+            "action": "event",
+            "type": "rate_limit_event"
+          },
+          {
+            "t": 3378,
+            "action": "event",
+            "type": "stream_event"
+          },
+          {
+            "t": 3379,
+            "action": "event",
+            "type": "stream_event"
+          },
+          {
+            "t": 3379,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 3380,
+            "action": "event",
+            "type": "stream_event"
+          },
+          {
+            "t": 3380,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 3380,
+            "action": "event",
+            "type": "stream_event"
+          },
+          {
+            "t": 3380,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 3380,
+            "action": "event",
+            "type": "stream_event"
+          },
+          {
+            "t": 3381,
+            "action": "event",
+            "type": "assistant"
+          },
+          {
+            "t": 3381,
+            "action": "event",
+            "type": "stream_event"
+          },
+          {
+            "t": 3381,
+            "action": "event",
+            "type": "stream_event"
+          },
+          {
+            "t": 3382,
+            "action": "event",
+            "type": "stream_event"
+          },
+          {
+            "t": 3382,
+            "action": "event",
+            "type": "assistant"
+          },
+          {
+            "t": 3382,
+            "action": "event",
+            "type": "stream_event"
+          },
+          {
+            "t": 3449,
+            "action": "event",
+            "type": "stream_event"
+          },
+          {
+            "t": 3463,
+            "action": "event",
+            "type": "stream_event"
+          },
+          {
+            "t": 3479,
+            "action": "event",
+            "type": "system",
+            "subtype": "notification"
+          },
+          {
+            "t": 3479,
+            "action": "event",
+            "type": "result",
+            "subtype": "success"
+          },
+          {
+            "t": 3479,
+            "action": "result",
+            "subtype": "success"
+          },
+          {
+            "t": 3479,
+            "action": "send_prompt",
+            "index": 1,
+            "content": "reply with exactly: partial_done"
+          },
+          {
+            "t": 3482,
+            "action": "event",
+            "type": "system",
+            "subtype": "init"
+          },
+          {
+            "t": 3482,
+            "action": "event",
+            "type": "system",
+            "subtype": "status"
+          },
+          {
+            "t": 7079,
+            "action": "event",
+            "type": "stream_event"
+          },
+          {
+            "t": 7079,
+            "action": "event",
+            "type": "stream_event"
+          },
+          {
+            "t": 7093,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 7094,
+            "action": "event",
+            "type": "stream_event"
+          },
+          {
+            "t": 7114,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 7114,
+            "action": "event",
+            "type": "stream_event"
+          },
+          {
+            "t": 7143,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 7143,
+            "action": "event",
+            "type": "stream_event"
+          },
+          {
+            "t": 7569,
+            "action": "event",
+            "type": "assistant"
+          },
+          {
+            "t": 7569,
+            "action": "event",
+            "type": "stream_event"
+          },
+          {
+            "t": 7569,
+            "action": "event",
+            "type": "stream_event"
+          },
+          {
+            "t": 9658,
+            "action": "event",
+            "type": "stream_event"
+          },
+          {
+            "t": 12071,
+            "action": "event",
+            "type": "assistant"
+          },
+          {
+            "t": 12071,
+            "action": "event",
+            "type": "stream_event"
+          },
+          {
+            "t": 13202,
+            "action": "event",
+            "type": "stream_event"
+          },
+          {
+            "t": 13202,
+            "action": "event",
+            "type": "stream_event"
+          },
+          {
+            "t": 13240,
+            "action": "event",
+            "type": "system",
+            "subtype": "notification"
+          },
+          {
+            "t": 13240,
+            "action": "event",
+            "type": "result",
+            "subtype": "success"
+          },
+          {
+            "t": 13240,
+            "action": "result",
+            "subtype": "success"
+          },
+          {
+            "t": 13590,
+            "action": "exit",
+            "code": 0,
+            "signal": null
+          }
+        ]
+      }
+    },
+    "replay-user-messages": {
+      "args": [
+        "--replay-user-messages"
+      ],
+      "prompts_sent": 2,
+      "mode": "prompts",
+      "out_dir": "goldens/2026-06-09-claude-2.1.170/replay-user-messages",
+      "runs": {
+        "native": {
+          "exit": {
+            "code": 0,
+            "signal": null
+          },
+          "sent": 2,
+          "results_seen": 2,
+          "assistant_count": 4,
+          "result_count": 2,
+          "event_counts": {
+            "assistant": 4,
+            "rate_limit_event": 1,
+            "result.success": 2,
+            "system.init": 2,
+            "system.notification": 2,
+            "system.thinking_tokens": 6,
+            "user": 2
+          },
+          "non_assistant_counts": {
+            "rate_limit_event": 1,
+            "system.init": 2,
+            "system.notification": 2,
+            "system.thinking_tokens": 6,
+            "user": 2
+          },
+          "system_subtypes": [
+            "init",
+            "notification",
+            "thinking_tokens"
+          ],
+          "suspicious_assistant_texts": []
+        }
+      },
+      "timelines": {
+        "native": [
+          {
+            "t": 2,
+            "action": "send_prompt",
+            "index": 0,
+            "content": "say the word green"
+          },
+          {
+            "t": 759,
+            "action": "event",
+            "type": "system",
+            "subtype": "init"
+          },
+          {
+            "t": 2184,
+            "action": "event",
+            "type": "rate_limit_event"
+          },
+          {
+            "t": 2388,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 2862,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 2873,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 2876,
+            "action": "event",
+            "type": "user"
+          },
+          {
+            "t": 2876,
+            "action": "event",
+            "type": "assistant"
+          },
+          {
+            "t": 2904,
+            "action": "event",
+            "type": "assistant"
+          },
+          {
+            "t": 2983,
+            "action": "event",
+            "type": "system",
+            "subtype": "notification"
+          },
+          {
+            "t": 2984,
+            "action": "event",
+            "type": "result",
+            "subtype": "success"
+          },
+          {
+            "t": 2984,
+            "action": "result",
+            "subtype": "success"
+          },
+          {
+            "t": 2984,
+            "action": "send_prompt",
+            "index": 1,
+            "content": "reply with exactly: replay_done"
+          },
+          {
+            "t": 2986,
+            "action": "event",
+            "type": "system",
+            "subtype": "init"
+          },
+          {
+            "t": 4975,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 5235,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 5235,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 5236,
+            "action": "event",
+            "type": "user"
+          },
+          {
+            "t": 5236,
+            "action": "event",
+            "type": "assistant"
+          },
+          {
+            "t": 5248,
+            "action": "event",
+            "type": "assistant"
+          },
+          {
+            "t": 5305,
+            "action": "event",
+            "type": "system",
+            "subtype": "notification"
+          },
+          {
+            "t": 5306,
+            "action": "event",
+            "type": "result",
+            "subtype": "success"
+          },
+          {
+            "t": 5306,
+            "action": "result",
+            "subtype": "success"
+          },
+          {
+            "t": 5655,
+            "action": "exit",
+            "code": 0,
+            "signal": null
+          }
+        ]
+      }
+    },
+    "max-turns-exhaustion": {
+      "args": [
+        "--max-turns",
+        "1",
+        "--dangerously-skip-permissions"
+      ],
+      "prompts_sent": 1,
+      "mode": "sequence",
+      "out_dir": "goldens/2026-06-09-claude-2.1.170/max-turns-exhaustion",
+      "runs": {
+        "native": {
+          "exit": {
+            "code": 1,
+            "signal": null
+          },
+          "sent": 1,
+          "results_seen": 1,
+          "assistant_count": 2,
+          "result_count": 1,
+          "event_counts": {
+            "assistant": 2,
+            "rate_limit_event": 1,
+            "result.error_max_turns": 1,
+            "system.init": 1,
+            "system.thinking_tokens": 3,
+            "user": 1
+          },
+          "non_assistant_counts": {
+            "rate_limit_event": 1,
+            "system.init": 1,
+            "system.thinking_tokens": 3,
+            "user": 1
+          },
+          "system_subtypes": [
+            "init",
+            "thinking_tokens"
+          ],
+          "suspicious_assistant_texts": []
+        }
+      },
+      "timelines": {
+        "native": [
+          {
+            "t": 2,
+            "action": "sequence_start",
+            "steps": 3
+          },
+          {
+            "t": 2,
+            "action": "send_prompt",
+            "index": 0,
+            "content": "Run echo step1 with the Bash tool. Then run echo step2 with the Bash tool as a separate command. Then summarize what you did."
+          },
+          {
+            "t": 2,
+            "action": "wait_result_start"
+          },
+          {
+            "t": 756,
+            "action": "event",
+            "type": "system",
+            "subtype": "init"
+          },
+          {
+            "t": 1981,
+            "action": "event",
+            "type": "rate_limit_event"
+          },
+          {
+            "t": 5086,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 5621,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 6033,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 6034,
+            "action": "event",
+            "type": "assistant"
+          },
+          {
+            "t": 6048,
+            "action": "event",
+            "type": "assistant"
+          },
+          {
+            "t": 6756,
+            "action": "event",
+            "type": "user"
+          },
+          {
+            "t": 6758,
+            "action": "event",
+            "type": "result",
+            "subtype": "error_max_turns"
+          },
+          {
+            "t": 6758,
+            "action": "result",
+            "subtype": "error_max_turns"
+          },
+          {
+            "t": 6796,
+            "action": "wait_result_end",
+            "results": 1
+          },
+          {
+            "t": 6796,
+            "action": "close_stdin"
+          },
+          {
+            "t": 6796,
+            "action": "sequence_done_closing_stdin"
+          },
+          {
+            "t": 7135,
+            "action": "exit",
+            "code": 1,
+            "signal": null
+          }
+        ]
+      }
+    },
+    "invalid-model-error": {
+      "args": [
+        "-p",
+        "--model",
+        "claude-bogus-model-xyz",
+        "--input-format",
+        "stream-json",
+        "--output-format",
+        "stream-json",
+        "--verbose"
+      ],
+      "prompts_sent": 1,
+      "mode": "sequence",
+      "out_dir": "goldens/2026-06-09-claude-2.1.170/invalid-model-error",
+      "runs": {
+        "native": {
+          "exit": {
+            "code": 1,
+            "signal": null
+          },
+          "sent": 1,
+          "results_seen": 1,
+          "assistant_count": 1,
+          "result_count": 1,
+          "event_counts": {
+            "assistant": 1,
+            "result.success": 1,
+            "system.init": 1
+          },
+          "non_assistant_counts": {
+            "system.init": 1
+          },
+          "system_subtypes": [
+            "init"
+          ],
+          "suspicious_assistant_texts": []
+        }
+      },
+      "timelines": {
+        "native": [
+          {
+            "t": 2,
+            "action": "sequence_start",
+            "steps": 3
+          },
+          {
+            "t": 2,
+            "action": "send_prompt",
+            "index": 0,
+            "content": "say hi"
+          },
+          {
+            "t": 2,
+            "action": "wait_result_start"
+          },
+          {
+            "t": 763,
+            "action": "event",
+            "type": "system",
+            "subtype": "init"
+          },
+          {
+            "t": 1870,
+            "action": "event",
+            "type": "assistant"
+          },
+          {
+            "t": 1871,
+            "action": "event",
+            "type": "result",
+            "subtype": "success"
+          },
+          {
+            "t": 1871,
+            "action": "result",
+            "subtype": "success"
+          },
+          {
+            "t": 1921,
+            "action": "wait_result_end",
+            "results": 1
+          },
+          {
+            "t": 1921,
+            "action": "close_stdin"
+          },
+          {
+            "t": 1921,
+            "action": "sequence_done_closing_stdin"
+          },
+          {
+            "t": 2253,
+            "action": "exit",
+            "code": 1,
+            "signal": null
+          }
+        ]
+      }
+    },
+    "session-id-fixed": {
+      "args": [
+        "--session-id",
+        "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeee0001"
+      ],
+      "prompts_sent": 1,
+      "mode": "sequence",
+      "out_dir": "goldens/2026-06-09-claude-2.1.170/session-id-fixed",
+      "runs": {
+        "native": {
+          "exit": {
+            "code": 0,
+            "signal": null
+          },
+          "sent": 1,
+          "results_seen": 1,
+          "assistant_count": 2,
+          "result_count": 1,
+          "event_counts": {
+            "assistant": 2,
+            "rate_limit_event": 1,
+            "result.success": 1,
+            "system.init": 1,
+            "system.notification": 1,
+            "system.thinking_tokens": 3
+          },
+          "non_assistant_counts": {
+            "rate_limit_event": 1,
+            "system.init": 1,
+            "system.notification": 1,
+            "system.thinking_tokens": 3
+          },
+          "system_subtypes": [
+            "init",
+            "notification",
+            "thinking_tokens"
+          ],
+          "suspicious_assistant_texts": []
+        }
+      },
+      "timelines": {
+        "native": [
+          {
+            "t": 2,
+            "action": "sequence_start",
+            "steps": 3
+          },
+          {
+            "t": 2,
+            "action": "send_prompt",
+            "index": 0,
+            "content": "Remember the codeword: PINEAPPLE. Reply with exactly: OK"
+          },
+          {
+            "t": 2,
+            "action": "wait_result_start"
+          },
+          {
+            "t": 742,
+            "action": "event",
+            "type": "system",
+            "subtype": "init"
+          },
+          {
+            "t": 1705,
+            "action": "event",
+            "type": "rate_limit_event"
+          },
+          {
+            "t": 2730,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 2730,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 2731,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 2731,
+            "action": "event",
+            "type": "assistant"
+          },
+          {
+            "t": 2731,
+            "action": "event",
+            "type": "assistant"
+          },
+          {
+            "t": 2825,
+            "action": "event",
+            "type": "system",
+            "subtype": "notification"
+          },
+          {
+            "t": 2825,
+            "action": "event",
+            "type": "result",
+            "subtype": "success"
+          },
+          {
+            "t": 2825,
+            "action": "result",
+            "subtype": "success"
+          },
+          {
+            "t": 2852,
+            "action": "wait_result_end",
+            "results": 1
+          },
+          {
+            "t": 2852,
+            "action": "close_stdin"
+          },
+          {
+            "t": 2852,
+            "action": "sequence_done_closing_stdin"
+          },
+          {
+            "t": 3150,
+            "action": "exit",
+            "code": 0,
+            "signal": null
+          }
+        ]
+      }
+    },
+    "resume-fixed": {
+      "args": [
+        "--resume",
+        "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeee0001"
+      ],
+      "prompts_sent": 1,
+      "mode": "sequence",
+      "out_dir": "goldens/2026-06-09-claude-2.1.170/resume-fixed",
+      "runs": {
+        "native": {
+          "exit": {
+            "code": 0,
+            "signal": null
+          },
+          "sent": 1,
+          "results_seen": 1,
+          "assistant_count": 2,
+          "result_count": 1,
+          "event_counts": {
+            "assistant": 2,
+            "rate_limit_event": 1,
+            "result.success": 1,
+            "system.init": 1,
+            "system.notification": 1,
+            "system.thinking_tokens": 3
+          },
+          "non_assistant_counts": {
+            "rate_limit_event": 1,
+            "system.init": 1,
+            "system.notification": 1,
+            "system.thinking_tokens": 3
+          },
+          "system_subtypes": [
+            "init",
+            "notification",
+            "thinking_tokens"
+          ],
+          "suspicious_assistant_texts": []
+        }
+      },
+      "timelines": {
+        "native": [
+          {
+            "t": 2,
+            "action": "sequence_start",
+            "steps": 3
+          },
+          {
+            "t": 2,
+            "action": "send_prompt",
+            "index": 0,
+            "content": "What is the codeword? Reply with just the codeword."
+          },
+          {
+            "t": 2,
+            "action": "wait_result_start"
+          },
+          {
+            "t": 828,
+            "action": "event",
+            "type": "system",
+            "subtype": "init"
+          },
+          {
+            "t": 2574,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 3014,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 3087,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 3088,
+            "action": "event",
+            "type": "assistant"
+          },
+          {
+            "t": 3088,
+            "action": "event",
+            "type": "assistant"
+          },
+          {
+            "t": 3154,
+            "action": "event",
+            "type": "rate_limit_event"
+          },
+          {
+            "t": 3172,
+            "action": "event",
+            "type": "system",
+            "subtype": "notification"
+          },
+          {
+            "t": 3173,
+            "action": "event",
+            "type": "result",
+            "subtype": "success"
+          },
+          {
+            "t": 3173,
+            "action": "result",
+            "subtype": "success"
+          },
+          {
+            "t": 3212,
+            "action": "wait_result_end",
+            "results": 1
+          },
+          {
+            "t": 3212,
+            "action": "close_stdin"
+          },
+          {
+            "t": 3212,
+            "action": "sequence_done_closing_stdin"
+          },
+          {
+            "t": 3625,
+            "action": "exit",
+            "code": 0,
+            "signal": null
+          }
+        ]
+      }
+    },
+    "continue-recent": {
+      "args": [
+        "--continue"
+      ],
+      "prompts_sent": 1,
+      "mode": "sequence",
+      "out_dir": "goldens/2026-06-09-claude-2.1.170/continue-recent",
+      "runs": {
+        "native": {
+          "exit": {
+            "code": 0,
+            "signal": null
+          },
+          "sent": 1,
+          "results_seen": 1,
+          "assistant_count": 2,
+          "result_count": 1,
+          "event_counts": {
+            "assistant": 2,
+            "rate_limit_event": 1,
+            "result.success": 1,
+            "system.init": 1,
+            "system.notification": 1,
+            "system.thinking_tokens": 3
+          },
+          "non_assistant_counts": {
+            "rate_limit_event": 1,
+            "system.init": 1,
+            "system.notification": 1,
+            "system.thinking_tokens": 3
+          },
+          "system_subtypes": [
+            "init",
+            "notification",
+            "thinking_tokens"
+          ],
+          "suspicious_assistant_texts": []
+        }
+      },
+      "timelines": {
+        "native": [
+          {
+            "t": 2,
+            "action": "sequence_start",
+            "steps": 3
+          },
+          {
+            "t": 2,
+            "action": "send_prompt",
+            "index": 0,
+            "content": "Reply with exactly: CONTINUED"
+          },
+          {
+            "t": 2,
+            "action": "wait_result_start"
+          },
+          {
+            "t": 978,
+            "action": "event",
+            "type": "system",
+            "subtype": "init"
+          },
+          {
+            "t": 2261,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 2428,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 2428,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 2433,
+            "action": "event",
+            "type": "assistant"
+          },
+          {
+            "t": 2433,
+            "action": "event",
+            "type": "assistant"
+          },
+          {
+            "t": 2507,
+            "action": "event",
+            "type": "rate_limit_event"
+          },
+          {
+            "t": 2524,
+            "action": "event",
+            "type": "system",
+            "subtype": "notification"
+          },
+          {
+            "t": 2525,
+            "action": "event",
+            "type": "result",
+            "subtype": "success"
+          },
+          {
+            "t": 2525,
+            "action": "result",
+            "subtype": "success"
+          },
+          {
+            "t": 2540,
+            "action": "wait_result_end",
+            "results": 1
+          },
+          {
+            "t": 2540,
+            "action": "close_stdin"
+          },
+          {
+            "t": 2540,
+            "action": "sequence_done_closing_stdin"
+          },
+          {
+            "t": 3036,
+            "action": "exit",
+            "code": 0,
+            "signal": null
+          }
+        ]
+      }
+    },
+    "control-protocol-misc": {
+      "args": [],
+      "prompts_sent": 1,
+      "mode": "sequence",
+      "out_dir": "goldens/2026-06-09-claude-2.1.170/control-protocol-misc",
+      "runs": {
+        "native": {
+          "exit": {
+            "code": 0,
+            "signal": null
+          },
+          "sent": 1,
+          "results_seen": 1,
+          "assistant_count": 2,
+          "result_count": 1,
+          "event_counts": {
+            "assistant": 2,
+            "control_response": 2,
+            "rate_limit_event": 1,
+            "result.success": 1,
+            "system.init": 1,
+            "system.notification": 1,
+            "system.status": 1,
+            "system.thinking_tokens": 3
+          },
+          "non_assistant_counts": {
+            "control_response": 2,
+            "rate_limit_event": 1,
+            "system.init": 1,
+            "system.notification": 1,
+            "system.status": 1,
+            "system.thinking_tokens": 3
+          },
+          "system_subtypes": [
+            "init",
+            "notification",
+            "status",
+            "thinking_tokens"
+          ],
+          "suspicious_assistant_texts": []
+        }
+      },
+      "timelines": {
+        "native": [
+          {
+            "t": 2,
+            "action": "sequence_start",
+            "steps": 5
+          },
+          {
+            "t": 2,
+            "action": "send_control",
+            "subtype": "initialize"
+          },
+          {
+            "t": 2,
+            "action": "delay_start",
+            "ms": 500
+          },
+          {
+            "t": 505,
+            "action": "delay_end"
+          },
+          {
+            "t": 505,
+            "action": "send_control",
+            "subtype": "set_permission_mode"
+          },
+          {
+            "t": 505,
+            "action": "delay_start",
+            "ms": 500
+          },
+          {
+            "t": 694,
+            "action": "event",
+            "type": "control_response"
+          },
+          {
+            "t": 694,
+            "action": "event",
+            "type": "control_response"
+          },
+          {
+            "t": 694,
+            "action": "event",
+            "type": "system",
+            "subtype": "status"
+          },
+          {
+            "t": 1006,
+            "action": "delay_end"
+          },
+          {
+            "t": 1006,
+            "action": "send_prompt",
+            "index": 0,
+            "content": "reply with exactly: control_done"
+          },
+          {
+            "t": 1006,
+            "action": "wait_result_start"
+          },
+          {
+            "t": 1028,
+            "action": "event",
+            "type": "system",
+            "subtype": "init"
+          },
+          {
+            "t": 2724,
+            "action": "event",
+            "type": "rate_limit_event"
+          },
+          {
+            "t": 2917,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 3209,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 3209,
+            "action": "event",
+            "type": "system",
+            "subtype": "thinking_tokens"
+          },
+          {
+            "t": 3210,
+            "action": "event",
+            "type": "assistant"
+          },
+          {
+            "t": 3210,
+            "action": "event",
+            "type": "assistant"
+          },
+          {
+            "t": 3299,
+            "action": "event",
+            "type": "system",
+            "subtype": "notification"
+          },
+          {
+            "t": 3300,
+            "action": "event",
+            "type": "result",
+            "subtype": "success"
+          },
+          {
+            "t": 3300,
+            "action": "result",
+            "subtype": "success"
+          },
+          {
+            "t": 3335,
+            "action": "wait_result_end",
+            "results": 1
+          },
+          {
+            "t": 3335,
+            "action": "close_stdin"
+          },
+          {
+            "t": 3335,
+            "action": "sequence_done_closing_stdin"
+          },
+          {
+            "t": 3847,
+            "action": "exit",
+            "code": 0,
+            "signal": null
+          }
+        ]
+      }
+    },
+    "output-json": {
+      "args": [
+        "-p",
+        "--model",
+        "sonnet",
+        "--output-format",
+        "json",
+        "what is 2+2? answer with just the number"
+      ],
+      "prompts_sent": 0,
+      "mode": "sequence",
+      "out_dir": "goldens/2026-06-09-claude-2.1.170/output-json",
+      "runs": {
+        "native": {
+          "exit": {
+            "code": 0,
+            "signal": null
+          },
+          "sent": 0,
+          "results_seen": 1,
+          "assistant_count": 0,
+          "result_count": 1,
+          "event_counts": {
+            "result.success": 1
+          },
+          "non_assistant_counts": {},
+          "system_subtypes": [],
+          "suspicious_assistant_texts": []
+        }
+      },
+      "timelines": {
+        "native": [
+          {
+            "t": 2,
+            "action": "sequence_start",
+            "steps": 1
+          },
+          {
+            "t": 2,
+            "action": "close_stdin"
+          },
+          {
+            "t": 2,
+            "action": "sequence_done_closing_stdin"
+          },
+          {
+            "t": 4357,
+            "action": "event",
+            "type": "result",
+            "subtype": "success"
+          },
+          {
+            "t": 4357,
+            "action": "result",
+            "subtype": "success"
+          },
+          {
+            "t": 4631,
+            "action": "exit",
+            "code": 0,
+            "signal": null
+          }
+        ]
+      }
+    },
+    "output-text": {
+      "args": [
+        "-p",
+        "--model",
+        "sonnet",
+        "say the word green"
+      ],
+      "prompts_sent": 0,
+      "mode": "sequence",
+      "out_dir": "goldens/2026-06-09-claude-2.1.170/output-text",
+      "runs": {
+        "native": {
+          "exit": {
+            "code": 0,
+            "signal": null
+          },
+          "sent": 0,
+          "results_seen": 0,
+          "assistant_count": 0,
+          "result_count": 0,
+          "event_counts": {
+            "non_json_stdout": 1
+          },
+          "non_assistant_counts": {
+            "non_json_stdout": 1
+          },
+          "system_subtypes": [],
+          "suspicious_assistant_texts": []
+        }
+      },
+      "timelines": {
+        "native": [
+          {
+            "t": 2,
+            "action": "sequence_start",
+            "steps": 1
+          },
+          {
+            "t": 2,
+            "action": "close_stdin"
+          },
+          {
+            "t": 2,
+            "action": "sequence_done_closing_stdin"
+          },
+          {
+            "t": 2954,
+            "action": "exit",
+            "code": 0,
+            "signal": null
+          }
+        ]
+      }
+    }
+  }
+}

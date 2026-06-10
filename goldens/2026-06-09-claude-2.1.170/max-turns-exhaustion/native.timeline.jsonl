@@ -1,0 +1,17 @@
+{"t":2,"action":"sequence_start","steps":3}
+{"t":2,"action":"send_prompt","index":0,"content":"Run echo step1 with the Bash tool. Then run echo step2 with the Bash tool as a separate command. Then summarize what you did."}
+{"t":2,"action":"wait_result_start"}
+{"t":756,"action":"event","type":"system","subtype":"init"}
+{"t":1981,"action":"event","type":"rate_limit_event"}
+{"t":5086,"action":"event","type":"system","subtype":"thinking_tokens"}
+{"t":5621,"action":"event","type":"system","subtype":"thinking_tokens"}
+{"t":6033,"action":"event","type":"system","subtype":"thinking_tokens"}
+{"t":6034,"action":"event","type":"assistant"}
+{"t":6048,"action":"event","type":"assistant"}
+{"t":6756,"action":"event","type":"user"}
+{"t":6758,"action":"event","type":"result","subtype":"error_max_turns"}
+{"t":6758,"action":"result","subtype":"error_max_turns"}
+{"t":6796,"action":"wait_result_end","results":1}
+{"t":6796,"action":"close_stdin"}
+{"t":6796,"action":"sequence_done_closing_stdin"}
+{"t":7135,"action":"exit","code":1,"signal":null}
