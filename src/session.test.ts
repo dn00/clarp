@@ -1629,3 +1629,92 @@ describe("backend capabilities", () => {
     expect(summary.title).toBe("From transcript");
   });
 });
+
+// ---- Prompt dispatch deadline ----
+
+// A prompt typed into the pty can be silently eaten when Claude's status file
+// reports idle a beat before the TUI input box accepts keystrokes. Busy then
+// never arrives, and the readiness watchdog is suppressed while a dispatch is
+// in flight — previously an unbounded silent wedge (seen live in the parity
+// replay). The deadline re-sends once, then fails with a terminal result.
+describe("prompt dispatch deadline", () => {
+  beforeEach(() => {
+    written = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk: any) => {
+      written.push(typeof chunk === "string" ? chunk : chunk.toString());
+      return true;
+    });
+    vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    output.configureOutput({ format: "stream-json", verbose: true, includePartial: true });
+    output.resetOutputState();
+    vi.useFakeTimers();
+  });
+  afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
+
+  const PROMPT = "DISPATCH_DEADLINE_PROBE";
+
+  function sends(ptyHandle: { writes: string[] }): number {
+    return ptyHandle.writes.join("").split(PROMPT).length - 1;
+  }
+
+  async function dispatchProbe() {
+    const ctx = createTestController({ args: { inputFormat: "stream-json" } });
+    await ctx.controller.start();
+    ctx.fireStatus("idle");
+    ctx.controller.enqueuePrompt(PROMPT);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(sends(ctx.ptyHandle)).toBe(1);
+    return ctx;
+  }
+
+  it("re-sends the prompt once when no turn starts within the deadline", async () => {
+    const { fireStatus, ptyHandle } = await dispatchProbe();
+
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(sends(ptyHandle)).toBe(2);
+
+    // The retry takes: turn starts, no error result, no third send.
+    fireStatus("busy");
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(sends(ptyHandle)).toBe(2);
+    expect(parsedLines().filter(l => l.type === "result")).toHaveLength(0);
+    expect(ptyHandle.kills).toHaveLength(0);
+  });
+
+  it("fails with a terminal error result when the retry also produces no turn", async () => {
+    const { controller, ptyHandle, exitCodes } = await dispatchProbe();
+
+    await vi.advanceTimersByTimeAsync(10_000);
+    await vi.advanceTimersByTimeAsync(10_000);
+
+    const results = parsedLines().filter(l => l.type === "result");
+    expect(results).toHaveLength(1);
+    expect(results[0].subtype).toBe("error");
+    expect(ptyHandle.kills).toContain("SIGTERM");
+
+    controller.handleClaudeExit(143);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(exitCodes).toEqual([1]);
+    // No duplicate result from the exit path.
+    expect(parsedLines().filter(l => l.type === "result")).toHaveLength(1);
+  });
+
+  it("does not re-send when the turn starts promptly", async () => {
+    const { fireStatus, ptyHandle } = await dispatchProbe();
+
+    fireStatus("busy");
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(sends(ptyHandle)).toBe(1);
+    expect(parsedLines().filter(l => l.type === "result")).toHaveLength(0);
+  });
+
+  it("stands down when the prompt produces a permission dialog instead of a turn", async () => {
+    const { fireStatus, ptyHandle } = await dispatchProbe();
+
+    // The prompt reached Claude — it opened a dialog. The permission machinery
+    // owns the session now; re-typing the prompt would corrupt the dialog.
+    fireStatus("waiting", "approve Bash");
+    await vi.advanceTimersByTimeAsync(25_000);
+    expect(sends(ptyHandle)).toBe(1);
+  });
+});
