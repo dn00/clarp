@@ -1,0 +1,40 @@
+{"t":2,"action":"sequence_start","steps":7}
+{"t":2,"action":"send_prompt","index":0,"content":"Count slowly from 1 to 100, one number per line."}
+{"t":2,"action":"delay_start","ms":2000}
+{"t":757,"action":"event","type":"system","subtype":"init"}
+{"t":1634,"action":"event","type":"rate_limit_event"}
+{"t":2007,"action":"delay_end"}
+{"t":2007,"action":"send_control","subtype":"interrupt"}
+{"t":2007,"action":"delay_start","ms":50}
+{"t":2008,"action":"event","type":"control_response"}
+{"t":2017,"action":"event","type":"user"}
+{"t":2018,"action":"event","type":"result","subtype":"error_during_execution"}
+{"t":2018,"action":"result","subtype":"error_during_execution"}
+{"t":2057,"action":"delay_end"}
+{"t":2057,"action":"send_prompt","index":1,"content":"Say exactly: PROMPT_B"}
+{"t":2057,"action":"wait_result_start"}
+{"t":2061,"action":"event","type":"system","subtype":"init"}
+{"t":4070,"action":"event","type":"system","subtype":"thinking_tokens"}
+{"t":4070,"action":"event","type":"system","subtype":"thinking_tokens"}
+{"t":4070,"action":"event","type":"system","subtype":"thinking_tokens"}
+{"t":4071,"action":"event","type":"assistant"}
+{"t":4071,"action":"event","type":"assistant"}
+{"t":4166,"action":"event","type":"system","subtype":"notification"}
+{"t":4172,"action":"event","type":"result","subtype":"success"}
+{"t":4172,"action":"result","subtype":"success"}
+{"t":4200,"action":"wait_result_end","results":2}
+{"t":4200,"action":"send_prompt","index":2,"content":"Say exactly: PROMPT_C"}
+{"t":4200,"action":"wait_result_start"}
+{"t":4203,"action":"event","type":"system","subtype":"init"}
+{"t":5616,"action":"event","type":"system","subtype":"thinking_tokens"}
+{"t":5779,"action":"event","type":"system","subtype":"thinking_tokens"}
+{"t":5780,"action":"event","type":"system","subtype":"thinking_tokens"}
+{"t":5780,"action":"event","type":"assistant"}
+{"t":5782,"action":"event","type":"assistant"}
+{"t":5851,"action":"event","type":"system","subtype":"notification"}
+{"t":5851,"action":"event","type":"result","subtype":"success"}
+{"t":5851,"action":"result","subtype":"success"}
+{"t":5896,"action":"wait_result_end","results":3}
+{"t":5896,"action":"close_stdin"}
+{"t":5896,"action":"sequence_done_closing_stdin"}
+{"t":6329,"action":"exit","code":0,"signal":null}

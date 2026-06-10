@@ -27,6 +27,19 @@ exhaustion, invalid-model error shapes, `--session-id`/`--resume`/`--continue`,
 the `initialize`/`set_permission_mode` control protocol, and `json`/`text`
 output formats.
 
+Two additional capture sets use their own case files:
+
+- `2026-06-10-interrupt/` — `scripts/cases-interrupt.json`: interrupt during a
+  long task (control-protocol and SIGINT), double interrupt, and
+  interrupt-then-prompt pipelines. Native answers an interrupted turn with
+  `result.error_during_execution`; follow-up prompts produce normal
+  `result.success`.
+- `2026-06-10-task-subagent/` — `scripts/cases-task-subagent.json`: a Task
+  subagent round-trip (tool name `Agent` in 2.1.170). Notable ground truth:
+  native emits **zero** sidechain lines on stdout, and emits
+  `system.task_started` / `system.task_notification` events for the subagent
+  lifecycle.
+
 ## How to use
 
 Check clarp against the goldens (free — never spawns native):

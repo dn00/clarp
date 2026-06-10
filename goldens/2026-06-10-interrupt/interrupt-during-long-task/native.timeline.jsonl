@@ -1,0 +1,16 @@
+{"t":2,"action":"sequence_start","steps":4}
+{"t":2,"action":"send_prompt","index":0,"content":"Count slowly from 1 to 100, one number per line."}
+{"t":2,"action":"delay_start","ms":2000}
+{"t":738,"action":"event","type":"system","subtype":"init"}
+{"t":1735,"action":"event","type":"rate_limit_event"}
+{"t":2003,"action":"delay_end"}
+{"t":2003,"action":"send_control","subtype":"interrupt"}
+{"t":2003,"action":"wait_result_start"}
+{"t":2004,"action":"event","type":"control_response"}
+{"t":2011,"action":"event","type":"user"}
+{"t":2012,"action":"event","type":"result","subtype":"error_during_execution"}
+{"t":2012,"action":"result","subtype":"error_during_execution"}
+{"t":2053,"action":"wait_result_end","results":1}
+{"t":2053,"action":"close_stdin"}
+{"t":2053,"action":"sequence_done_closing_stdin"}
+{"t":2335,"action":"exit","code":1,"signal":null}

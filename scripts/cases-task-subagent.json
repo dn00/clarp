@@ -1,0 +1,15 @@
+[
+  {
+    "name": "task-subagent",
+    "args": ["--permission-prompt-tool", "stdio"],
+    "sequence": [
+      {
+        "type": "user",
+        "content": "Use the Task tool to launch a subagent that answers this question: what is 7 times 6? Report only the subagent's answer."
+      },
+      { "type": "wait_result", "timeoutMs": 180000 },
+      { "type": "close_stdin" }
+    ],
+    "cwd": ".parity-runs/golden-cwd"
+  }
+]

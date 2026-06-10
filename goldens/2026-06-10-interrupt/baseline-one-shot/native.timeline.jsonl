@@ -1,0 +1,17 @@
+{"t":2,"action":"sequence_start","steps":3}
+{"t":2,"action":"send_prompt","index":0,"content":"Say exactly: READY"}
+{"t":2,"action":"wait_result_start"}
+{"t":929,"action":"event","type":"system","subtype":"init"}
+{"t":1972,"action":"event","type":"rate_limit_event"}
+{"t":2748,"action":"event","type":"system","subtype":"thinking_tokens"}
+{"t":2748,"action":"event","type":"system","subtype":"thinking_tokens"}
+{"t":2748,"action":"event","type":"system","subtype":"thinking_tokens"}
+{"t":2748,"action":"event","type":"assistant"}
+{"t":2748,"action":"event","type":"assistant"}
+{"t":2766,"action":"event","type":"system","subtype":"notification"}
+{"t":2766,"action":"event","type":"result","subtype":"success"}
+{"t":2766,"action":"result","subtype":"success"}
+{"t":2811,"action":"wait_result_end","results":1}
+{"t":2811,"action":"close_stdin"}
+{"t":2811,"action":"sequence_done_closing_stdin"}
+{"t":3134,"action":"exit","code":0,"signal":null}
