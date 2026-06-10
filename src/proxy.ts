@@ -33,16 +33,22 @@ let nextProxyRequestId = 0;
  */
 export function createProxy(
   callbacks: ProxyCallbacks,
-  opts: { upstreamTimeoutMs?: number } = {},
+  opts: { upstreamTimeoutMs?: number; upstreamBaseUrl?: string } = {},
 ): http.Server {
   const upstreamTimeoutMs = opts.upstreamTimeoutMs ?? DEFAULT_UPSTREAM_TIMEOUT_MS;
+  // upstreamBaseUrl is a test-only override; an http:// fake upstream is supported.
+  const upstreamBase = new URL(opts.upstreamBaseUrl ?? UPSTREAM);
+  const transport = upstreamBase.protocol === "http:" ? http : https;
+  const upstreamPort = upstreamBase.port
+    ? Number(upstreamBase.port)
+    : upstreamBase.protocol === "http:" ? 80 : 443;
   return http.createServer((clientReq, clientRes) => {
     const reqPath = clientReq.url || "/";
     const method = clientReq.method || "GET";
     const requestId = String(++nextProxyRequestId);
     callbacks.onRequestStart(method, reqPath);
 
-    const upstream = new URL(reqPath, UPSTREAM);
+    const upstream = new URL(reqPath, upstreamBase);
     const forwardHeaders: Record<string, string> = {};
     for (const [key, value] of Object.entries(clientReq.headers)) {
       if (key === "host" || key === "connection" || key === "accept-encoding") continue;
@@ -58,19 +64,23 @@ export function createProxy(
       const body = Buffer.concat(bodyChunks);
       let observeMessagesSSE = reqPath.startsWith("/v1/messages");
       const requestInfo: ProxyRequestInfo = { requestId, observe: observeMessagesSSE };
+      // Only a request that asked to stream makes a non-SSE 200 anomalous —
+      // count_tokens and stream:false calls legitimately return JSON.
+      let requestedStream = false;
       if (observeMessagesSSE && body.length > 0) {
         try {
           const parsedBody = JSON.parse(body.toString("utf8")) as Record<string, unknown>;
           observeMessagesSSE = shouldObserveMessagesRequest(parsedBody);
           requestInfo.observe = observeMessagesSSE;
+          requestedStream = parsedBody.stream === true;
           callbacks.onRequestBody?.(parsedBody, reqPath, requestInfo);
         } catch {}
       }
       let upstreamDone = false;
-      const upstreamReq = https.request(
+      const upstreamReq = transport.request(
         {
           hostname: upstream.hostname,
-          port: 443,
+          port: upstreamPort,
           path: upstream.pathname + upstream.search,
           method,
           headers: forwardHeaders,
@@ -89,21 +99,34 @@ export function createProxy(
 
           clientRes.writeHead(statusCode, upstreamRes.headers);
 
+          // Mid-stream upstream death surfaces on the RESPONSE stream, not the
+          // request — and an unhandled 'error' here would crash the process.
+          // Headers are already out, so sever the client connection: never
+          // leave Claude hanging and never append bytes the upstream did not send.
+          const onUpstreamResFailure = (err?: Error): void => {
+            if (upstreamDone) return;
+            upstreamDone = true;
+            callbacks.onProxyError(err ?? new Error("Upstream response aborted before completion"));
+            if (!clientRes.destroyed) clientRes.destroy();
+          };
+          upstreamRes.on("error", onUpstreamResFailure);
+          upstreamRes.on("aborted", () => onUpstreamResFailure());
+
           const isMessages = reqPath.startsWith("/v1/messages");
           const contentType = upstreamRes.headers["content-type"] || "";
           const isSSE = contentType.includes("text/event-stream");
 
-          if (isMessages && statusCode === 200) {
-            // Log content type for debugging
-            if (!isSSE) {
-              callbacks.onProxyError(new Error(`Expected SSE but got content-type: ${contentType}`));
-            }
+          if (isMessages && statusCode === 200 && requestedStream && !isSSE) {
+            callbacks.onProxyError(new Error(`Expected SSE but got content-type: ${contentType}`));
           }
 
           if (isMessages && isSSE) {
             let sseBuf = "";
             upstreamRes.on("data", (chunk: Buffer) => {
-              clientRes.write(chunk);
+              if (!clientRes.write(chunk)) {
+                upstreamRes.pause();
+                clientRes.once("drain", () => upstreamRes.resume());
+              }
               sseBuf += chunk.toString("utf8");
               const result = extractSSEEvents(sseBuf);
               sseBuf = result.remainder;
@@ -150,12 +173,18 @@ export function createProxy(
       });
 
       upstreamReq.on("error", (err) => {
+        if (upstreamDone) return;
         upstreamDone = true;
         callbacks.onProxyError(err);
         if (clientRes.destroyed) return;
-        if (!clientRes.headersSent) {
-          clientRes.writeHead(502, { "Content-Type": "application/json" });
+        if (clientRes.headersSent) {
+          // The upstream's response already started flowing to Claude. Never
+          // append bytes the upstream did not send — sever the connection so
+          // the failure is abrupt, not fabricated.
+          clientRes.destroy();
+          return;
         }
+        clientRes.writeHead(502, { "Content-Type": "application/json" });
         clientRes.end(JSON.stringify({ error: { type: "proxy_error", message: err.message } }));
       });
 
@@ -198,7 +227,7 @@ export function extractSSEEvents(buffer: string): { complete: SSEEvent[]; remain
  */
 export function startProxy(
   callbacks: ProxyCallbacks,
-  opts: { upstreamTimeoutMs?: number } = {},
+  opts: { upstreamTimeoutMs?: number; upstreamBaseUrl?: string } = {},
 ): Promise<{ server: http.Server; port: number }> {
   return new Promise((resolve, reject) => {
     const server = createProxy(callbacks, opts);

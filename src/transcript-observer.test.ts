@@ -61,6 +61,30 @@ describe("TranscriptObserver", () => {
     expect(lines).toEqual([{ uuid: "same", value: 1 }]);
   });
 
+  it("survives a multibyte UTF-8 character split across polls", async () => {
+    const lines: Record<string, unknown>[] = [];
+    observer = new TranscriptObserver({
+      transcriptPath,
+      pollIntervalMs: 10,
+      onLine: (line) => lines.push(line),
+    });
+    observer.start();
+
+    const record = { uuid: "emoji", text: "hi 😀 there" };
+    const bytes = Buffer.from(JSON.stringify(record) + "\n", "utf8");
+    // Split inside the emoji's 4-byte UTF-8 sequence.
+    const emojiStart = bytes.indexOf(Buffer.from("😀", "utf8"));
+    const splitAt = emojiStart + 2;
+
+    fs.appendFileSync(transcriptPath, bytes.subarray(0, splitAt));
+    await vi.advanceTimersByTimeAsync(10);
+    expect(lines).toEqual([]);
+
+    fs.appendFileSync(transcriptPath, bytes.subarray(splitAt));
+    await vi.advanceTimersByTimeAsync(10);
+    expect(lines).toEqual([record]);
+  });
+
   it("skips a partial first line when starting from a capped tail", () => {
     const lines: Record<string, unknown>[] = [];
     fs.writeFileSync(
