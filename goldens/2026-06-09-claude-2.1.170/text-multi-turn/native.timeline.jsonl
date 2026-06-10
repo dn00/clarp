@@ -1,0 +1,49 @@
+{"t":2,"action":"send_prompt","index":0,"content":"answer in one word: ok"}
+{"t":737,"action":"event","type":"system","subtype":"init"}
+{"t":2256,"action":"event","type":"system","subtype":"thinking_tokens"}
+{"t":2490,"action":"event","type":"system","subtype":"thinking_tokens"}
+{"t":2493,"action":"event","type":"assistant"}
+{"t":2496,"action":"event","type":"assistant"}
+{"t":2587,"action":"event","type":"rate_limit_event"}
+{"t":2602,"action":"event","type":"system","subtype":"notification"}
+{"t":2619,"action":"event","type":"result","subtype":"success"}
+{"t":2619,"action":"result","subtype":"success"}
+{"t":2619,"action":"send_prompt","index":1,"content":"what is 2+2? answer with just the number"}
+{"t":2622,"action":"event","type":"system","subtype":"init"}
+{"t":4164,"action":"event","type":"system","subtype":"thinking_tokens"}
+{"t":4165,"action":"event","type":"system","subtype":"thinking_tokens"}
+{"t":4165,"action":"event","type":"assistant"}
+{"t":4167,"action":"event","type":"assistant"}
+{"t":4266,"action":"event","type":"system","subtype":"notification"}
+{"t":4266,"action":"event","type":"result","subtype":"success"}
+{"t":4266,"action":"result","subtype":"success"}
+{"t":4267,"action":"send_prompt","index":2,"content":"return a JSON object with key status and value ok"}
+{"t":4271,"action":"event","type":"system","subtype":"init"}
+{"t":7565,"action":"event","type":"system","subtype":"thinking_tokens"}
+{"t":7565,"action":"event","type":"system","subtype":"thinking_tokens"}
+{"t":7565,"action":"event","type":"system","subtype":"thinking_tokens"}
+{"t":7565,"action":"event","type":"assistant"}
+{"t":7565,"action":"event","type":"assistant"}
+{"t":7599,"action":"event","type":"system","subtype":"notification"}
+{"t":7599,"action":"event","type":"result","subtype":"success"}
+{"t":7599,"action":"result","subtype":"success"}
+{"t":7599,"action":"send_prompt","index":3,"content":"respond with exactly three comma-separated colors"}
+{"t":7601,"action":"event","type":"system","subtype":"init"}
+{"t":9050,"action":"event","type":"system","subtype":"thinking_tokens"}
+{"t":9254,"action":"event","type":"system","subtype":"thinking_tokens"}
+{"t":9254,"action":"event","type":"system","subtype":"thinking_tokens"}
+{"t":9254,"action":"event","type":"assistant"}
+{"t":9255,"action":"event","type":"assistant"}
+{"t":9384,"action":"event","type":"system","subtype":"notification"}
+{"t":9384,"action":"event","type":"result","subtype":"success"}
+{"t":9384,"action":"result","subtype":"success"}
+{"t":9384,"action":"send_prompt","index":4,"content":"say complete"}
+{"t":9388,"action":"event","type":"system","subtype":"init"}
+{"t":10974,"action":"event","type":"system","subtype":"thinking_tokens"}
+{"t":10974,"action":"event","type":"system","subtype":"thinking_tokens"}
+{"t":10976,"action":"event","type":"assistant"}
+{"t":10984,"action":"event","type":"assistant"}
+{"t":11074,"action":"event","type":"system","subtype":"notification"}
+{"t":11075,"action":"event","type":"result","subtype":"success"}
+{"t":11075,"action":"result","subtype":"success"}
+{"t":11595,"action":"exit","code":0,"signal":null}
