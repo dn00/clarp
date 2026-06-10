@@ -110,6 +110,22 @@ describe("parseArgs", () => {
     expect(() => parseArgs(["--max-budget-usd"])).toThrow("Invalid --max-budget-usd: (missing)");
   });
 
+  it("intercepts --permission-prompt-tool and never passes it to claude", () => {
+    const args = parseArgs(["--permission-prompt-tool", "stdio"]) as Args;
+    expect(args.permissionPromptTool).toBe("stdio");
+    expect(args.claudeArgs).toEqual([]);
+  });
+
+  it("intercepts --permission-prompt-tool in equals form", () => {
+    const args = parseArgs(["--permission-prompt-tool=stdio"]) as Args;
+    expect(args.permissionPromptTool).toBe("stdio");
+    expect(args.claudeArgs).toEqual([]);
+  });
+
+  it("rejects --permission-prompt-tool without a value", () => {
+    expect(() => parseArgs(["--permission-prompt-tool"])).toThrow("argument missing");
+  });
+
   it("passes through --model with value", () => {
     const args = parseArgs(["--model", "claude-opus-4-7"]) as Args;
     expect(args.claudeArgs).toEqual(["--model", "claude-opus-4-7"]);
@@ -163,8 +179,8 @@ describe("parseArgs", () => {
     ]) as Args;
     expect(args.claudeArgs).toEqual([
       "--fallback-model", "claude-sonnet-4-5",
-      "--permission-prompt-tool", "mcp__permissions__prompt",
     ]);
+    expect(args.permissionPromptTool).toBe("mcp__permissions__prompt");
     expect(args.prompt).toBe("hello");
   });
 
@@ -687,6 +703,22 @@ describe("parseStdinLine", () => {
     expect(cb.controlResponses).toHaveLength(1);
     expect(cb.controlResponses[0]!.resp.behavior).toBe("allow");
     expect(cb.controlResponses[0]!.requestId).toBe("req-1");
+  });
+
+  it("routes SDK-shaped control_response (nested request_id and payload)", () => {
+    // The shape SDK clients send, per src/__fixtures__/claude-p-control-requests-all.jsonl
+    const cb = makeCallbacks();
+    parseStdinLine(JSON.stringify({
+      type: "control_response",
+      response: {
+        subtype: "success",
+        request_id: "perm-001",
+        response: { behavior: "deny", message: "no", toolUseID: "toolu_01" },
+      },
+    }), cb);
+    expect(cb.controlResponses).toHaveLength(1);
+    expect(cb.controlResponses[0]!.resp.behavior).toBe("deny");
+    expect(cb.controlResponses[0]!.requestId).toBe("perm-001");
   });
 
   it("handles keep_alive", () => {

@@ -228,6 +228,26 @@ export function emitInit(sid: string, cwd: string, data?: InitData): void {
 }
 
 /**
+ * Emits a tool execution result the way native claude -p does: a user event
+ * carrying the tool_result message plus the raw tool_use_result payload.
+ * Input is a transcript JSONL user line (camelCase toolUseResult).
+ */
+export function emitUserToolResult(line: Record<string, unknown>): void {
+  const sid = typeof line.sessionId === "string" ? line.sessionId : "";
+  if (sid) sessionId = sid;
+  if (format !== "stream-json") return;
+  writeLine({
+    type: "user",
+    message: line.message,
+    parent_tool_use_id: null,
+    session_id: sid || sessionId,
+    ...(typeof line.uuid === "string" ? { uuid: line.uuid } : {}),
+    ...(typeof line.timestamp === "string" ? { timestamp: line.timestamp } : {}),
+    ...(line.toolUseResult !== undefined ? { tool_use_result: line.toolUseResult } : {}),
+  });
+}
+
+/**
  * Forwards a parsed transcript JSONL event without reshaping it.
  */
 export function emitTranscriptEvent(event: Record<string, unknown>): void {

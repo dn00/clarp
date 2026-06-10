@@ -30,6 +30,18 @@ export function isTranscriptApiError(event: Record<string, unknown>): boolean {
   return event.type === "system" && event.subtype === "api_error";
 }
 
+/**
+ * Matches transcript user lines that carry a tool execution result — the
+ * source for the `user` events native claude -p emits after each tool runs.
+ */
+export function isTranscriptToolResultUserLine(event: Record<string, unknown>): boolean {
+  if (event.type !== "user" || event.isSidechain === true) return false;
+  const message = asRecord(event.message);
+  const content = message?.content;
+  if (!Array.isArray(content)) return false;
+  return content.some((block) => asRecord(block)?.type === "tool_result");
+}
+
 export function isTranscriptApiErrorMessage(event: Record<string, unknown>): boolean {
   return event.type === "assistant" && event.isApiErrorMessage === true;
 }
