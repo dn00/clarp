@@ -1,6 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
+import { execSync } from "node:child_process";
 
 export type PidFileData = {
   pid: number;
@@ -52,6 +53,25 @@ function isPidAlive(pid: number): boolean {
 }
 
 /**
+ * Returns the parent pid of `pid`, or null if it can't be determined. Used only
+ * to disambiguate concurrent same-cwd sessions, so the subprocess cost is paid
+ * only in that rare case. Exported for platform verification in tests.
+ */
+export function getParentPid(pid: number): number | null {
+  if (!Number.isInteger(pid) || pid <= 0) return null;
+  try {
+    const cmd = process.platform === "win32"
+      ? `powershell -NoProfile -Command "(Get-CimInstance Win32_Process -Filter 'ProcessId=${pid}').ParentProcessId"`
+      : `ps -o ppid= -p ${pid}`;
+    const out = execSync(cmd, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 5000 });
+    const value = parseInt(out.trim(), 10);
+    return Number.isInteger(value) && value > 0 ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Polls Claude Code's per-process session file for status and transcript
  * metadata. Tests can pass a homeDir to isolate filesystem state.
  */
@@ -70,18 +90,28 @@ export class PidWatcher {
   // Once a session file is located, we pin it and stat it directly instead of
   // re-scanning the sessions directory on every poll.
   private adoptedPath: string | null = null;
+  // Injectable for tests; default to real process probes.
+  private isAlive: (pid: number) => boolean;
+  private parentPidOf: (pid: number) => number | null;
 
   constructor(
     private pid: number,
     private callbacks: PidWatcherCallbacks,
     homeDir?: string,
-    opts?: { cwd?: string; startedAt?: number },
+    opts?: {
+      cwd?: string;
+      startedAt?: number;
+      isPidAlive?: (pid: number) => boolean;
+      getParentPid?: (pid: number) => number | null;
+    },
   ) {
     this.homeDir = homeDir || os.homedir();
     this.sessionsDir = path.join(this.homeDir, ".claude", "sessions");
     this.pidFilePath = path.join(this.sessionsDir, `${pid}.json`);
     this.cwd = opts?.cwd;
     this.startedAt = opts?.startedAt ?? 0;
+    this.isAlive = opts?.isPidAlive ?? isPidAlive;
+    this.parentPidOf = opts?.getParentPid ?? getParentPid;
   }
 
   /**
@@ -235,7 +265,7 @@ export class PidWatcher {
     let names: string[];
     try { names = fs.readdirSync(this.sessionsDir); } catch { return null; }
 
-    let best: { file: string; when: number } | null = null;
+    const candidates: Array<{ file: string; pid: number; when: number }> = [];
     for (const name of names) {
       if (!name.endsWith(".json")) continue;
       const file = path.join(this.sessionsDir, name);
@@ -246,10 +276,32 @@ export class PidWatcher {
       // Exclude a prior run's stale file in the same cwd, and any session whose
       // process is already gone (claim a live, current session only).
       if (when < this.startedAt - ADOPT_SKEW_MS) continue;
-      if (!isPidAlive(data.pid)) continue;
-      if (!best || when > best.when) best = { file, when };
+      if (!this.isAlive(data.pid)) continue;
+      candidates.push({ file, pid: data.pid, when });
     }
-    return best?.file ?? null;
+
+    if (candidates.length === 0) return null;
+    if (candidates.length === 1) return candidates[0]!.file;
+
+    // Multiple live sessions share this cwd (e.g. two clarp runs launched from
+    // the same directory at once). Adopt only the one whose process descends
+    // from the wrapper we launched; if ancestry can't single one out, refuse
+    // rather than risk reporting against another run's Claude.
+    const ours = candidates.filter((c) => this.isDescendantOf(c.pid, this.pid));
+    if (ours.length === 0) return null;
+    return ours.reduce((a, b) => (b.when > a.when ? b : a)).file;
+  }
+
+  /** Walks the parent chain from `pid` looking for `ancestor` (bounded depth). */
+  private isDescendantOf(pid: number, ancestor: number, maxDepth = 6): boolean {
+    let current = pid;
+    for (let i = 0; i < maxDepth; i++) {
+      if (current === ancestor) return true;
+      const parent = this.parentPidOf(current);
+      if (parent == null || parent <= 0 || parent === current) return false;
+      current = parent;
+    }
+    return false;
   }
 
   private tryReadFile(filePath: string): PidFileData | null {
