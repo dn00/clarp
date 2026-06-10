@@ -1,0 +1,17 @@
+{"t":2,"action":"sequence_start","steps":3}
+{"t":2,"action":"send_prompt","index":0,"content":"answer in one word: ok"}
+{"t":2,"action":"wait_result_start"}
+{"t":743,"action":"event","type":"system","subtype":"init"}
+{"t":1831,"action":"event","type":"rate_limit_event"}
+{"t":7580,"action":"event","type":"system","subtype":"thinking_tokens"}
+{"t":7580,"action":"event","type":"system","subtype":"thinking_tokens"}
+{"t":7605,"action":"event","type":"system","subtype":"thinking_tokens"}
+{"t":7622,"action":"event","type":"assistant"}
+{"t":7653,"action":"event","type":"assistant"}
+{"t":7927,"action":"event","type":"system","subtype":"notification"}
+{"t":7928,"action":"event","type":"result","subtype":"success"}
+{"t":7928,"action":"result","subtype":"success"}
+{"t":7947,"action":"wait_result_end","results":1}
+{"t":7947,"action":"close_stdin"}
+{"t":7947,"action":"sequence_done_closing_stdin"}
+{"t":8306,"action":"exit","code":0,"signal":null}

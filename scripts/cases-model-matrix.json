@@ -1,0 +1,20 @@
+[
+  {
+    "name": "opus-one-shot",
+    "args": ["--model", "opus"],
+    "sequence": [
+      { "type": "user", "content": "answer in one word: ok" },
+      { "type": "wait_result", "timeoutMs": 90000 },
+      { "type": "close_stdin" }
+    ]
+  },
+  {
+    "name": "haiku-one-shot",
+    "args": ["--model", "haiku"],
+    "sequence": [
+      { "type": "user", "content": "answer in one word: ok" },
+      { "type": "wait_result", "timeoutMs": 90000 },
+      { "type": "close_stdin" }
+    ]
+  }
+]

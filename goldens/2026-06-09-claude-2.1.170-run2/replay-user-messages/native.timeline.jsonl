@@ -1,0 +1,24 @@
+{"t":3,"action":"send_prompt","index":0,"content":"say the word green"}
+{"t":820,"action":"event","type":"system","subtype":"init"}
+{"t":1765,"action":"event","type":"rate_limit_event"}
+{"t":2239,"action":"event","type":"system","subtype":"thinking_tokens"}
+{"t":2239,"action":"event","type":"system","subtype":"thinking_tokens"}
+{"t":2239,"action":"event","type":"system","subtype":"thinking_tokens"}
+{"t":2240,"action":"event","type":"user"}
+{"t":2240,"action":"event","type":"assistant"}
+{"t":2242,"action":"event","type":"assistant"}
+{"t":2378,"action":"event","type":"system","subtype":"notification"}
+{"t":2379,"action":"event","type":"result","subtype":"success"}
+{"t":2379,"action":"result","subtype":"success"}
+{"t":2379,"action":"send_prompt","index":1,"content":"reply with exactly: replay_done"}
+{"t":2383,"action":"event","type":"system","subtype":"init"}
+{"t":4824,"action":"event","type":"system","subtype":"thinking_tokens"}
+{"t":4825,"action":"event","type":"system","subtype":"thinking_tokens"}
+{"t":4831,"action":"event","type":"system","subtype":"thinking_tokens"}
+{"t":4839,"action":"event","type":"user"}
+{"t":4839,"action":"event","type":"assistant"}
+{"t":4855,"action":"event","type":"assistant"}
+{"t":4987,"action":"event","type":"system","subtype":"notification"}
+{"t":4988,"action":"event","type":"result","subtype":"success"}
+{"t":4988,"action":"result","subtype":"success"}
+{"t":5304,"action":"exit","code":0,"signal":null}
