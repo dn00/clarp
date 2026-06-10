@@ -1,5 +1,6 @@
 import * as http from "node:http";
 import * as https from "node:https";
+import { StringDecoder } from "node:string_decoder";
 import { URL } from "node:url";
 import type { ProxyRequestInfo } from "./api-debug.js";
 import { shouldObserveMessagesRequest } from "./message-request-filter.js";
@@ -122,12 +123,17 @@ export function createProxy(
 
           if (isMessages && isSSE) {
             let sseBuf = "";
+            // Decode through a persistent StringDecoder so a multibyte UTF-8
+            // char split across network chunks isn't corrupted in clarp's
+            // observed stream. The raw bytes Claude receives are untouched —
+            // clientRes.write(chunk) forwards them before any decoding.
+            const decoder = new StringDecoder("utf8");
             upstreamRes.on("data", (chunk: Buffer) => {
               if (!clientRes.write(chunk)) {
                 upstreamRes.pause();
                 clientRes.once("drain", () => upstreamRes.resume());
               }
-              sseBuf += chunk.toString("utf8");
+              sseBuf += decoder.write(chunk);
               const result = extractSSEEvents(sseBuf);
               sseBuf = result.remainder;
               for (const evt of result.complete) {
@@ -136,6 +142,7 @@ export function createProxy(
             });
             upstreamRes.on("end", () => {
               upstreamDone = true;
+              sseBuf += decoder.end();
               if (sseBuf.trim().length > 0) {
                 const result = extractSSEEvents(sseBuf + "\n\n");
                 for (const evt of result.complete) {
