@@ -314,12 +314,7 @@ export class SessionController {
     } else if (req.subtype === "get_context_usage" && requestId) {
       const usage = output.getContextUsage();
       this.log(`Context usage: ${usage.input_tokens} in, ${usage.output_tokens} out`);
-      process.stdout.write(JSON.stringify({
-        type: "control_response",
-        request_id: requestId,
-        response: { context_usage: usage },
-        session_id: output.getSessionId(),
-      }) + "\n");
+      output.emitControlResponseSuccess(requestId, { context_usage: usage });
     } else if (req.subtype === "set_model") {
       const model = req.model as string;
       if (model) {
