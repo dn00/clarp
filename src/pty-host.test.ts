@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import {
   normalizePtyKillSignal,
   sendPrompt,
@@ -6,6 +6,7 @@ import {
   sendPermissionAllow,
   sendPermissionDeny,
   sendSlashCommand,
+  SUBMIT_KEY_DELAY_MS,
   type PtyHandle,
 } from "./pty-host.js";
 
@@ -23,29 +24,63 @@ function mockHandle(): { handle: PtyHandle; writes: string[] } {
 }
 
 describe("sendPrompt", () => {
-  it("sends single-line text with carriage return", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("wraps single-line text in bracketed paste and submits with a delayed Enter", () => {
     const { handle, writes } = mockHandle();
     sendPrompt(handle, "hello world");
-    expect(writes).toEqual(["hello world", "\r"]);
+    expect(writes).toEqual(["\x1b[200~hello world\x1b[201~"]);
+    vi.advanceTimersByTime(SUBMIT_KEY_DELAY_MS);
+    expect(writes).toEqual(["\x1b[200~hello world\x1b[201~", "\r"]);
+  });
+
+  // Regression: a long single-line prompt written together with its Enter can
+  // coalesce into one PTY read; Claude's TUI then treats the chunk as a paste
+  // and the \r as a literal newline, leaving the prompt unsent in the
+  // composer. Paste-wrapping plus a separate Enter write prevents that.
+  it("paste-wraps long single-line prompts so a coalesced read cannot eat the Enter", () => {
+    const longText = "x".repeat(189);
+    const { handle, writes } = mockHandle();
+    sendPrompt(handle, longText, 0);
+    expect(writes).toEqual(["\x1b[200~" + longText + "\x1b[201~", "\r"]);
+  });
+
+  it("submits immediately when the delay is zero", () => {
+    const { handle, writes } = mockHandle();
+    sendPrompt(handle, "hello", 0);
+    expect(writes).toEqual(["\x1b[200~hello\x1b[201~", "\r"]);
   });
 
   it("uses bracketed paste mode for multi-line text", () => {
     const { handle, writes } = mockHandle();
-    sendPrompt(handle, "line1\nline2");
+    sendPrompt(handle, "line1\nline2", 0);
     expect(writes).toEqual(["\x1b[200~line1\nline2\x1b[201~", "\r"]);
-  });
-
-  it("detects newlines anywhere in text", () => {
-    const { handle, writes } = mockHandle();
-    sendPrompt(handle, "a\nb\nc");
-    expect(writes[0]).toContain("\x1b[200~");
-    expect(writes[0]).toContain("\x1b[201~");
   });
 
   it("strips bracketed paste delimiters from prompt text", () => {
     const { handle, writes } = mockHandle();
-    sendPrompt(handle, "line1\n\x1b[201~escaped\n\x1b[200~line2");
+    sendPrompt(handle, "line1\n\x1b[201~escaped\n\x1b[200~line2", 0);
     expect(writes).toEqual(["\x1b[200~line1\nescaped\nline2\x1b[201~", "\r"]);
+  });
+
+  it("does not throw when the PTY dies before the delayed Enter fires", () => {
+    const writes: string[] = [];
+    const handle: PtyHandle = {
+      write: (data: string) => {
+        if (data === "\r") throw new Error("EIO");
+        writes.push(data);
+      },
+      resize: () => {},
+      kill: () => {},
+      pid: 1,
+    };
+    sendPrompt(handle, "hello");
+    expect(() => vi.advanceTimersByTime(SUBMIT_KEY_DELAY_MS)).not.toThrow();
   });
 });
 

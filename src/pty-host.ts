@@ -89,17 +89,39 @@ function sanitizePromptText(text: string): string {
 }
 
 /**
- * Writes a prompt into Claude's TUI and submits it. Multi-line prompts use
- * bracketed paste so terminal editors do not reinterpret line breaks.
+ * Delay between the prompt text and the Enter that submits it. Written in the
+ * same tick, the two can coalesce into a single PTY read on Claude's side;
+ * the TUI classifies a large chunk as a paste, and a \r inside a paste is a
+ * literal newline rather than a submit — the prompt then sits unsent in the
+ * composer until something else kills the process.
  */
-export function sendPrompt(handle: PtyHandle, text: string): void {
+export const SUBMIT_KEY_DELAY_MS = 75;
+
+/**
+ * Writes a prompt into Claude's TUI and submits it. The text is always
+ * wrapped in bracketed paste — not just multi-line text — so the TUI's
+ * paste-burst heuristic can never misclassify the chunk, and Enter is sent
+ * as a separate, delayed keystroke so it cannot be absorbed into the paste.
+ */
+export function sendPrompt(
+  handle: PtyHandle,
+  text: string,
+  submitDelayMs: number = SUBMIT_KEY_DELAY_MS,
+): void {
   const safeText = sanitizePromptText(text);
-  if (safeText.includes("\n")) {
-    handle.write(BRACKETED_PASTE_OPEN + safeText + BRACKETED_PASTE_CLOSE);
+  handle.write(BRACKETED_PASTE_OPEN + safeText + BRACKETED_PASTE_CLOSE);
+  const pressEnter = () => {
+    try {
+      handle.write("\r");
+    } catch {
+      // PTY already gone; the process-exit path reports the failure.
+    }
+  };
+  if (submitDelayMs > 0) {
+    setTimeout(pressEnter, submitDelayMs);
   } else {
-    handle.write(safeText);
+    pressEnter();
   }
-  handle.write("\r");
 }
 
 /**

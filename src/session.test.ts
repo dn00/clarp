@@ -945,3 +945,55 @@ describe("backend capabilities", () => {
     expect(summary.title).toBe("From transcript");
   });
 });
+
+// ---- Prompt submit verification ----
+
+// Regression for silently lost prompts: the PTY paste path can drop the
+// submitting Enter (text + \r coalesce into one read; the TUI treats the
+// chunk as a paste and the \r as a newline). The controller must notice that
+// no turn started and press Enter again — the text is still in the composer.
+describe("prompt submit verification", () => {
+  beforeEach(() => { vi.useFakeTimers(); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  async function dispatchPrompt(text: string) {
+    const t = createTestController({ args: { inputFormat: "stream-json" } });
+    await t.controller.start();
+    t.controller.enqueuePrompt(text);
+    t.fireStatus("idle");
+    await Promise.resolve();
+    await Promise.resolve();
+    vi.advanceTimersByTime(100); // delayed submit Enter from sendPrompt
+    return t;
+  }
+
+  const enters = (ptyHandle: { writes: string[] }) =>
+    ptyHandle.writes.filter((w) => w === "\r").length;
+
+  it("presses Enter again when a dispatched prompt never starts a turn", async () => {
+    const { ptyHandle } = await dispatchPrompt("x".repeat(189));
+    expect(enters(ptyHandle)).toBe(1);
+    vi.advanceTimersByTime(1500);
+    expect(enters(ptyHandle)).toBe(2);
+  });
+
+  it("stops retrying once the turn starts", async () => {
+    const { ptyHandle, fireStatus } = await dispatchPrompt("hello");
+    fireStatus("busy");
+    vi.advanceTimersByTime(10_000);
+    expect(enters(ptyHandle)).toBe(1);
+  });
+
+  it("gives up after the retry budget is exhausted", async () => {
+    const { ptyHandle } = await dispatchPrompt("x".repeat(189));
+    vi.advanceTimersByTime(60_000);
+    expect(enters(ptyHandle)).toBe(4); // 1 submit + 3 retries
+  });
+
+  it("never presses Enter while a permission prompt is pending", async () => {
+    const { ptyHandle, fireStatus } = await dispatchPrompt("hello");
+    fireStatus("waiting", "permission");
+    vi.advanceTimersByTime(10_000);
+    expect(enters(ptyHandle)).toBe(1);
+  });
+});

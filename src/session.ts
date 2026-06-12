@@ -26,6 +26,8 @@ import * as output from "./output.js";
 const READY_TIMEOUT_MS = 30_000;
 const TRANSCRIPT_EVENT_CLOCK_SKEW_MS = 5_000;
 const EMPTY_TURN_TRANSCRIPT_GRACE_MS = 1500;
+const SUBMIT_VERIFY_INTERVAL_MS = 1500;
+const SUBMIT_VERIFY_RETRIES = 3;
 type PidWatcherLike = Pick<
   PidWatcher,
   "start" | "stop" | "getSessionId" | "getTranscriptPath" | "readTranscriptInit" | "readTranscriptEvents"
@@ -53,6 +55,8 @@ export type SessionControllerOptions = {
  */
 export class SessionController {
   private turnActive = false;
+  private submitVerifyTimer: ReturnType<typeof setTimeout> | null = null;
+  private submitRetriesLeft = 0;
   private turnCount = 0;
   private turnStart = 0;
   private claudeReady = false;
@@ -136,9 +140,11 @@ export class SessionController {
 
     if (status === "busy") {
       this.waitingForAction = false;
+      this.clearSubmitVerification();
       output.emitSessionStateChanged("running");
     } else if (status === "waiting") {
       this.waitingForAction = true;
+      this.clearSubmitVerification();
       output.emitSessionStateChanged("requires_action");
       if (this.opts.args.inputFormat !== "stream-json" && !this.permissionWarningShown) {
         this.permissionWarningShown = true;
@@ -258,6 +264,7 @@ export class SessionController {
     this.processExited = true;
     this.log(`Claude exited: ${code}`);
     this.clearEmptyTurnTimer();
+    this.clearSubmitVerification();
     if (this.turnActive) {
       this.turnActive = false;
       if (!this.opts.backend.capabilities.emitsResults) {
@@ -376,7 +383,48 @@ export class SessionController {
       output.emitUserReplay(item.content);
       this.claudeReady = false;
       sendPrompt(this.opts.ptyHandle, item.content);
+      this.armSubmitVerification();
     }
+  }
+
+  /**
+   * Watches that a dispatched prompt actually started a turn. Even with
+   * bracketed paste, the submitting Enter can be lost to TUI input races;
+   * the prompt text is then still sitting in Claude's composer, so pressing
+   * Enter again submits it. Cancelled the moment a turn starts, and never
+   * fires while Claude is waiting on a permission prompt (an extra Enter
+   * there would approve it).
+   */
+  private armSubmitVerification(): void {
+    this.clearSubmitVerification();
+    this.submitRetriesLeft = SUBMIT_VERIFY_RETRIES;
+    this.scheduleSubmitCheck();
+  }
+
+  private scheduleSubmitCheck(): void {
+    this.submitVerifyTimer = setTimeout(() => {
+      this.submitVerifyTimer = null;
+      if (this.processExited || this.shuttingDown) return;
+      if (this.turnActive || this.waitingForAction || this.pendingPermissionRequestId !== null) return;
+      if (this.submitRetriesLeft <= 0) {
+        this.log("Prompt did not start a turn after submit retries; giving up");
+        return;
+      }
+      this.submitRetriesLeft--;
+      this.log(
+        `No turn ${SUBMIT_VERIFY_INTERVAL_MS}ms after dispatch — prompt likely stuck in composer; pressing Enter again`,
+      );
+      this.opts.ptyHandle.write("\r");
+      this.scheduleSubmitCheck();
+    }, SUBMIT_VERIFY_INTERVAL_MS);
+  }
+
+  private clearSubmitVerification(): void {
+    if (this.submitVerifyTimer) {
+      clearTimeout(this.submitVerifyTimer);
+      this.submitVerifyTimer = null;
+    }
+    this.submitRetriesLeft = 0;
   }
 
   private waitForReady(): Promise<void> {
