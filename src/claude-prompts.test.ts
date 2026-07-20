@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
-  createWorkspaceTrustPromptDetector,
+  createStartupPromptDetector,
+  isBypassPermissionsPrompt,
   isWorkspaceTrustPrompt,
   shouldAutoConfirmWorkspaceTrust,
   stripTerminalControls,
@@ -17,6 +18,19 @@ Accessing workspace:
 
  ❯ 1. Yes, I trust this folder
    2. No, exit
+
+ Enter to confirm · Esc to cancel
+`;
+
+const BYPASS_PROMPT = `
+ WARNING: Claude Code running in Bypass Permissions mode
+
+ In Bypass Permissions mode, Claude Code will not ask for your approval before running potentially dangerous commands.
+
+ By proceeding, you accept all responsibility for actions taken while running in Bypass Permissions mode.
+
+ ❯ 1. No, exit
+   2. Yes, I accept
 
  Enter to confirm · Esc to cancel
 `;
@@ -45,6 +59,12 @@ describe("Claude prompt detection", () => {
     expect(isWorkspaceTrustPrompt("Hi! What can I help you with?")).toBe(false);
   });
 
+  it("detects the bypass-permissions warning prompt", () => {
+    expect(isBypassPermissionsPrompt(BYPASS_PROMPT)).toBe(true);
+    expect(isBypassPermissionsPrompt(TRUST_PROMPT)).toBe(false);
+    expect(isBypassPermissionsPrompt("Hi! What can I help you with?")).toBe(false);
+  });
+
   it("auto-confirms workspace trust only for explicit permission bypass", () => {
     expect(shouldAutoConfirmWorkspaceTrust(["--dangerously-skip-permissions"])).toBe(true);
     expect(shouldAutoConfirmWorkspaceTrust(["--permission-mode", "bypassPermissions"])).toBe(false);
@@ -53,7 +73,7 @@ describe("Claude prompt detection", () => {
 
   it("detects prompts split across PTY chunks only once", () => {
     const onDetected = vi.fn();
-    const detector = createWorkspaceTrustPromptDetector(onDetected);
+    const detector = createStartupPromptDetector(onDetected);
 
     detector(TRUST_PROMPT.slice(0, 120));
     expect(onDetected).not.toHaveBeenCalled();
@@ -62,5 +82,19 @@ describe("Claude prompt detection", () => {
     detector(TRUST_PROMPT);
 
     expect(onDetected).toHaveBeenCalledTimes(1);
+    expect(onDetected).toHaveBeenCalledWith("trust");
+  });
+
+  it("reports trust then bypass, each once, as the dialogs stream in", () => {
+    const onDetected = vi.fn();
+    const detector = createStartupPromptDetector(onDetected);
+
+    detector(TRUST_PROMPT);
+    detector(BYPASS_PROMPT);
+    detector(BYPASS_PROMPT);
+
+    expect(onDetected).toHaveBeenNthCalledWith(1, "trust");
+    expect(onDetected).toHaveBeenNthCalledWith(2, "bypass");
+    expect(onDetected).toHaveBeenCalledTimes(2);
   });
 });

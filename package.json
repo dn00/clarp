@@ -1,6 +1,6 @@
 {
   "name": "clarp-cli",
-  "version": "0.1.12",
+  "version": "0.1.13",
   "description": "Drop-in replacement for claude -p. Uses your Claude Code subscription instead of metered API pricing.",
   "type": "module",
   "author": "dn00",

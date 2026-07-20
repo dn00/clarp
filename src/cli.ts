@@ -3,7 +3,7 @@
 import { parseArgs } from "./args.js";
 import { ProxyBackend } from "./backends/proxy-backend.js";
 import {
-  createWorkspaceTrustPromptDetector,
+  createStartupPromptDetector,
   shouldAutoConfirmWorkspaceTrust,
   stripTerminalControls,
 } from "./claude-prompts.js";
@@ -59,7 +59,13 @@ async function main(): Promise<void> {
   const shouldAutoTrustWorkspace = shouldAutoConfirmWorkspaceTrust(args.claudeArgs);
 
   log(`Spawning: claude ${claudeArgs.join(" ")}`);
-  const detectWorkspaceTrustPrompt = createWorkspaceTrustPromptDetector(() => {
+  const detectStartupPrompt = createStartupPromptDetector((prompt) => {
+    if (prompt === "bypass") {
+      // Default-highlighted option is "No, exit"; pick option "2. Yes, I accept" by number then confirm.
+      log("Auto-accepting Claude Bypass Permissions mode warning because --dangerously-skip-permissions was passed.");
+      ptyHandle?.write("2\r");
+      return;
+    }
     trustPromptDetected = true;
     if (shouldAutoTrustWorkspace) {
       log("Auto-confirming Claude workspace trust prompt because --dangerously-skip-permissions was passed.");
@@ -90,7 +96,7 @@ async function main(): Promise<void> {
           const text = stripTerminalControls(data).trim();
           if (text) process.stderr.write(`[clarp] Claude PTY: ${text}\n`);
         }
-        detectWorkspaceTrustPrompt(data);
+        detectStartupPrompt(data);
       },
       onExit: (code: number) => {
         fatalCleanup?.markChildExited();
